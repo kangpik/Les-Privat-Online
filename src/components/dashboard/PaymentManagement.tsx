@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -80,9 +80,13 @@ const PaymentManagement = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [students, setStudents] = useState<
+    Array<{ id: string; name: string; subject?: string }>
+  >([]);
   const { user } = useAuth();
 
   const [formData, setFormData] = useState({
+    studentId: "",
     studentName: "",
     amount: "",
     paymentDate: new Date().toISOString().split("T")[0],
@@ -91,10 +95,59 @@ const PaymentManagement = () => {
     notes: "",
   });
 
+  useEffect(() => {
+    if (user && isAddDialogOpen) {
+      fetchStudents();
+    }
+  }, [user, isAddDialogOpen]);
+
+  const fetchStudents = async () => {
+    if (!user) return;
+
+    try {
+      // Get user's tenant
+      const { data: tenantUser } = await supabase
+        .from("tenant_users")
+        .select("tenant_id")
+        .eq("user_id", user.id)
+        .single();
+
+      if (!tenantUser) return;
+
+      // Fetch students for the tenant
+      const { data, error } = await supabase
+        .from("students")
+        .select("id, name, subject")
+        .eq("tenant_id", tenantUser.tenant_id)
+        .eq("is_active", true)
+        .order("name", { ascending: true });
+
+      if (error) {
+        console.error("Error fetching students:", error);
+        return;
+      }
+
+      setStudents(data || []);
+    } catch (error) {
+      console.error("Error:", error);
+    }
+  };
+
+  const handleStudentSelect = (studentId: string) => {
+    const selectedStudent = students.find((s) => s.id === studentId);
+    if (selectedStudent) {
+      setFormData({
+        ...formData,
+        studentId: studentId,
+        studentName: selectedStudent.name,
+      });
+    }
+  };
+
   const handleAddPayment = async () => {
     if (
       !user ||
-      !formData.studentName ||
+      !formData.studentId ||
       !formData.amount ||
       !formData.paymentMethod
     ) {
@@ -120,6 +173,7 @@ const PaymentManagement = () => {
       // Create payment record
       const { error } = await supabase.from("payments").insert({
         tenant_id: tenantUser.tenant_id,
+        student_id: formData.studentId,
         amount: parseFloat(formData.amount),
         payment_date: formData.paymentDate,
         payment_method: formData.paymentMethod,
@@ -135,6 +189,7 @@ const PaymentManagement = () => {
 
       // Reset form and close dialog
       setFormData({
+        studentId: "",
         studentName: "",
         amount: "",
         paymentDate: new Date().toISOString().split("T")[0],
@@ -236,15 +291,22 @@ const PaymentManagement = () => {
                   <Label htmlFor="studentName" className="text-right">
                     Nama Siswa *
                   </Label>
-                  <Input
-                    id="studentName"
-                    value={formData.studentName}
-                    onChange={(e) =>
-                      setFormData({ ...formData, studentName: e.target.value })
-                    }
-                    className="col-span-3"
-                    placeholder="Masukkan nama siswa"
-                  />
+                  <Select
+                    value={formData.studentId}
+                    onValueChange={handleStudentSelect}
+                  >
+                    <SelectTrigger className="col-span-3">
+                      <SelectValue placeholder="Pilih siswa" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {students.map((student) => (
+                        <SelectItem key={student.id} value={student.id}>
+                          {student.name}{" "}
+                          {student.subject && `(${student.subject})`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="amount" className="text-right">

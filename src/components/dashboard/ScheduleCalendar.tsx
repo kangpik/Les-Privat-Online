@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar, Clock, MapPin, User, Plus } from "lucide-react";
@@ -72,9 +72,13 @@ const ScheduleCalendar = () => {
   const [schedule, setSchedule] = useState(defaultSchedule);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [students, setStudents] = useState<
+    Array<{ id: string; name: string; subject?: string }>
+  >([]);
   const { user } = useAuth();
 
   const [formData, setFormData] = useState({
+    studentId: "",
     studentName: "",
     subject: "",
     startTime: "",
@@ -85,10 +89,60 @@ const ScheduleCalendar = () => {
     notes: "",
   });
 
+  useEffect(() => {
+    if (user && isAddDialogOpen) {
+      fetchStudents();
+    }
+  }, [user, isAddDialogOpen]);
+
+  const fetchStudents = async () => {
+    if (!user) return;
+
+    try {
+      // Get user's tenant
+      const { data: tenantUser } = await supabase
+        .from("tenant_users")
+        .select("tenant_id")
+        .eq("user_id", user.id)
+        .single();
+
+      if (!tenantUser) return;
+
+      // Fetch students for the tenant
+      const { data, error } = await supabase
+        .from("students")
+        .select("id, name, subject")
+        .eq("tenant_id", tenantUser.tenant_id)
+        .eq("is_active", true)
+        .order("name", { ascending: true });
+
+      if (error) {
+        console.error("Error fetching students:", error);
+        return;
+      }
+
+      setStudents(data || []);
+    } catch (error) {
+      console.error("Error:", error);
+    }
+  };
+
+  const handleStudentSelect = (studentId: string) => {
+    const selectedStudent = students.find((s) => s.id === studentId);
+    if (selectedStudent) {
+      setFormData({
+        ...formData,
+        studentId: studentId,
+        studentName: selectedStudent.name,
+        subject: selectedStudent.subject || formData.subject,
+      });
+    }
+  };
+
   const handleAddSchedule = async () => {
     if (
       !user ||
-      !formData.studentName ||
+      !formData.studentId ||
       !formData.subject ||
       !formData.startTime ||
       !formData.endTime
@@ -115,6 +169,7 @@ const ScheduleCalendar = () => {
       // Create schedule
       const { error } = await supabase.from("schedules").insert({
         tenant_id: tenantUser.tenant_id,
+        student_id: formData.studentId,
         subject: formData.subject,
         start_time: `${selectedDate.toISOString().split("T")[0]}T${formData.startTime}:00`,
         end_time: `${selectedDate.toISOString().split("T")[0]}T${formData.endTime}:00`,
@@ -133,6 +188,7 @@ const ScheduleCalendar = () => {
 
       // Reset form and close dialog
       setFormData({
+        studentId: "",
         studentName: "",
         subject: "",
         startTime: "",
@@ -204,15 +260,22 @@ const ScheduleCalendar = () => {
                 <Label htmlFor="studentName" className="text-right">
                   Nama Siswa *
                 </Label>
-                <Input
-                  id="studentName"
-                  value={formData.studentName}
-                  onChange={(e) =>
-                    setFormData({ ...formData, studentName: e.target.value })
-                  }
-                  className="col-span-3"
-                  placeholder="Masukkan nama siswa"
-                />
+                <Select
+                  value={formData.studentId}
+                  onValueChange={handleStudentSelect}
+                >
+                  <SelectTrigger className="col-span-3">
+                    <SelectValue placeholder="Pilih siswa" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {students.map((student) => (
+                      <SelectItem key={student.id} value={student.id}>
+                        {student.name}{" "}
+                        {student.subject && `(${student.subject})`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="subject" className="text-right">
