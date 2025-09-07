@@ -187,6 +187,20 @@ const PaymentManagement = () => {
         return;
       }
 
+      // Add to local state for immediate display
+      const newPayment: PaymentRecord = {
+        id: Date.now().toString(),
+        studentName: formData.studentName,
+        amount: parseFloat(formData.amount),
+        date: formData.paymentDate,
+        status: formData.status as "paid" | "pending" | "overdue",
+        method: formData.paymentMethod,
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${formData.studentName}`,
+        subject: "Mata Pelajaran", // You might want to get this from student data
+      };
+
+      setPayments((prev) => [newPayment, ...prev]);
+
       // Reset form and close dialog
       setFormData({
         studentId: "",

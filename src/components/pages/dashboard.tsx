@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import TopNavigation from "../dashboard/layout/TopNavigation";
 import Sidebar from "../dashboard/layout/Sidebar";
@@ -17,15 +17,31 @@ import { cn } from "@/lib/utils";
 const Dashboard = () => {
   const [loading, setLoading] = useState(false);
   const [activeItem, setActiveItem] = useState("Dashboard");
+  const [scheduleRefreshTrigger, setScheduleRefreshTrigger] = useState(0);
   const navigate = useNavigate();
+  const scheduleCalendarRef = useRef<{ refreshSchedule: () => void } | null>(
+    null,
+  );
 
   // Function to trigger loading state for demonstration
   const handleRefresh = () => {
     setLoading(true);
+    // Trigger schedule refresh if on schedule page
+    if (activeItem === "Jadwal" && scheduleCalendarRef.current) {
+      scheduleCalendarRef.current.refreshSchedule();
+    }
     // Reset loading after 2 seconds
     setTimeout(() => {
       setLoading(false);
     }, 2000);
+  };
+
+  // Function to refresh schedule data from other components
+  const handleScheduleRefresh = () => {
+    setScheduleRefreshTrigger((prev) => prev + 1);
+    if (scheduleCalendarRef.current) {
+      scheduleCalendarRef.current.refreshSchedule();
+    }
   };
 
   // Handle sidebar navigation
@@ -74,13 +90,18 @@ const Dashboard = () => {
       case "Dashboard":
         return <DashboardGrid isLoading={loading} />;
       case "Jadwal":
-        return <ScheduleCalendar />;
+        return (
+          <ScheduleCalendar
+            ref={scheduleCalendarRef}
+            refreshTrigger={scheduleRefreshTrigger}
+          />
+        );
       case "Pembayaran":
         return <PaymentManagement />;
       case "Materi":
         return <LearningMaterials />;
       case "Siswa":
-        return <StudentsManagement />;
+        return <StudentsManagement onScheduleAdded={handleScheduleRefresh} />;
       case "Laporan":
         return <ReportsAnalytics />;
       case "Pengaturan":

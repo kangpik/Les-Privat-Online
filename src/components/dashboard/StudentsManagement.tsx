@@ -14,6 +14,10 @@ import {
   MapPin,
   Edit,
   Trash2,
+  Calendar,
+  Clock,
+  User,
+  X,
 } from "lucide-react";
 import {
   Dialog,
@@ -50,12 +54,22 @@ interface Student {
   created_at: string;
 }
 
-const StudentsManagement = () => {
+interface StudentsManagementProps {
+  onScheduleAdded?: () => void;
+}
+
+const StudentsManagement = ({
+  onScheduleAdded,
+}: StudentsManagementProps = {}) => {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [formLoading, setFormLoading] = useState(false);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
   const { user } = useAuth();
 
   const [formData, setFormData] = useState({
@@ -69,6 +83,106 @@ const StudentsManagement = () => {
     address: "",
     notes: "",
   });
+
+  const [scheduleFormData, setScheduleFormData] = useState({
+    subject: "",
+    startTime: "",
+    endTime: "",
+    location: "",
+    meetingType: "online",
+    meetingUrl: "",
+    notes: "",
+    date: new Date().toISOString().split("T")[0],
+  });
+
+  const handleViewDetail = (student: Student) => {
+    setSelectedStudent(student);
+    setIsDetailDialogOpen(true);
+  };
+
+  const handleScheduleLesson = (student: Student) => {
+    setSelectedStudent(student);
+    setScheduleFormData({
+      ...scheduleFormData,
+      subject: student.subject || "",
+    });
+    setIsScheduleDialogOpen(true);
+  };
+
+  const handleAddSchedule = async () => {
+    if (
+      !user ||
+      !selectedStudent ||
+      !scheduleFormData.subject ||
+      !scheduleFormData.startTime ||
+      !scheduleFormData.endTime ||
+      !scheduleFormData.date
+    ) {
+      alert("Mohon lengkapi semua field yang wajib diisi");
+      return;
+    }
+
+    try {
+      setScheduleLoading(true);
+
+      // Get user's tenant
+      const { data: tenantUser } = await supabase
+        .from("tenant_users")
+        .select("tenant_id")
+        .eq("user_id", user.id)
+        .single();
+
+      if (!tenantUser) {
+        alert("Tenant tidak ditemukan");
+        return;
+      }
+
+      // Create schedule
+      const { error } = await supabase.from("schedules").insert({
+        tenant_id: tenantUser.tenant_id,
+        student_id: selectedStudent.id,
+        subject: scheduleFormData.subject,
+        start_time: `${scheduleFormData.date}T${scheduleFormData.startTime}:00`,
+        end_time: `${scheduleFormData.date}T${scheduleFormData.endTime}:00`,
+        location: scheduleFormData.location,
+        meeting_type: scheduleFormData.meetingType,
+        meeting_url: scheduleFormData.meetingUrl,
+        notes: scheduleFormData.notes,
+        status: "upcoming",
+      });
+
+      if (error) {
+        console.error("Error creating schedule:", error);
+        alert("Gagal menambahkan jadwal");
+        return;
+      }
+
+      // Reset form and close dialog
+      setScheduleFormData({
+        subject: "",
+        startTime: "",
+        endTime: "",
+        location: "",
+        meetingType: "online",
+        meetingUrl: "",
+        notes: "",
+        date: new Date().toISOString().split("T")[0],
+      });
+      setIsScheduleDialogOpen(false);
+      setSelectedStudent(null);
+      alert("Jadwal berhasil ditambahkan!");
+
+      // Notify parent component that schedule was added
+      if (onScheduleAdded) {
+        onScheduleAdded();
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      alert("Terjadi kesalahan");
+    } finally {
+      setScheduleLoading(false);
+    }
+  };
 
   const handleAddStudent = async () => {
     if (!user || !formData.name) {
@@ -305,6 +419,8 @@ const StudentsManagement = () => {
                     <SelectItem value="SMA Kelas 10">SMA Kelas 10</SelectItem>
                     <SelectItem value="SMA Kelas 11">SMA Kelas 11</SelectItem>
                     <SelectItem value="SMA Kelas 12">SMA Kelas 12</SelectItem>
+                    <SelectItem value="Pra Sekolah">Pra Sekolah</SelectItem>
+                    <SelectItem value="Pasca Sekolah">Pasca Sekolah</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -332,6 +448,52 @@ const StudentsManagement = () => {
                     <SelectItem value="Bahasa Indonesia">
                       Bahasa Indonesia
                     </SelectItem>
+                    <SelectItem value="Calistung">Calistung</SelectItem>
+                    <SelectItem value="Bimbel Intensif UTBK & Sekolah Kedinasan">
+                      Bimbel Intensif UTBK & Sekolah Kedinasan
+                    </SelectItem>
+                    <SelectItem value="Robotics">Robotics</SelectItem>
+                    <SelectItem value="Pemrograman/Koding">
+                      Pemrograman/Koding
+                    </SelectItem>
+                    <SelectItem value="Ekonomi & Akuntansi">
+                      Ekonomi & Akuntansi
+                    </SelectItem>
+                    <SelectItem value="Gambar & Lukis">
+                      Gambar & Lukis
+                    </SelectItem>
+                    <SelectItem value="Musik Piano">Musik Piano</SelectItem>
+                    <SelectItem value="Musik Gitar">Musik Gitar</SelectItem>
+                    <SelectItem value="Musik Biola">Musik Biola</SelectItem>
+                    <SelectItem value="Musik Vokal">Musik Vokal</SelectItem>
+                    <SelectItem value="Musik Lainnya">Musik Lainnya</SelectItem>
+                    <SelectItem value="Komputer & Desain Grafis">
+                      Komputer & Desain Grafis
+                    </SelectItem>
+                    <SelectItem value="Tari">Tari</SelectItem>
+                    <SelectItem value="Olahraga Berenang">
+                      Olahraga Berenang
+                    </SelectItem>
+                    <SelectItem value="Olahraga Basket">
+                      Olahraga Basket
+                    </SelectItem>
+                    <SelectItem value="Olahraga Futsal">
+                      Olahraga Futsal
+                    </SelectItem>
+                    <SelectItem value="Olahraga Bulutangkis">
+                      Olahraga Bulutangkis
+                    </SelectItem>
+                    <SelectItem value="Olahraga Lainnya">
+                      Olahraga Lainnya
+                    </SelectItem>
+                    <SelectItem value="Anak Berkebutuhan Khusus">
+                      Anak Berkebutuhan Khusus
+                    </SelectItem>
+                    <SelectItem value="Mengaji">Mengaji</SelectItem>
+                    <SelectItem value="Public Speaking & Dakwah">
+                      Public Speaking & Dakwah
+                    </SelectItem>
+                    <SelectItem value="Les Lainnya">Les Lainnya</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -629,12 +791,14 @@ const StudentsManagement = () => {
                         variant="outline"
                         size="sm"
                         className="flex-1 rounded-full"
+                        onClick={() => handleViewDetail(student)}
                       >
                         Lihat Detail
                       </Button>
                       <Button
                         size="sm"
                         className="flex-1 rounded-full bg-blue-500 hover:bg-blue-600"
+                        onClick={() => handleScheduleLesson(student)}
                       >
                         Jadwalkan Les
                       </Button>
@@ -646,6 +810,388 @@ const StudentsManagement = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Student Detail Dialog */}
+      <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-3">
+              <User className="h-5 w-5 text-blue-500" />
+              Detail Siswa
+            </DialogTitle>
+          </DialogHeader>
+          {selectedStudent && (
+            <div className="space-y-6">
+              <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl">
+                <Avatar className="h-16 w-16">
+                  <AvatarImage
+                    src={
+                      selectedStudent.avatar_url ||
+                      `https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedStudent.name}`
+                    }
+                    alt={selectedStudent.name}
+                  />
+                  <AvatarFallback className="text-lg">
+                    {selectedStudent.name[0]}
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-900">
+                    {selectedStudent.name}
+                  </h3>
+                  {selectedStudent.grade && (
+                    <p className="text-gray-600">{selectedStudent.grade}</p>
+                  )}
+                  {selectedStudent.subject && (
+                    <Badge
+                      className={`${getSubjectColor(selectedStudent.subject)} mt-2`}
+                    >
+                      {selectedStudent.subject}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-4">
+                  <h4 className="font-medium text-gray-900">
+                    Informasi Kontak
+                  </h4>
+                  {selectedStudent.email && (
+                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                      <Mail className="h-4 w-4 text-gray-500" />
+                      <div>
+                        <p className="text-sm text-gray-500">Email</p>
+                        <p className="text-sm font-medium">
+                          {selectedStudent.email}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {selectedStudent.phone && (
+                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                      <Phone className="h-4 w-4 text-gray-500" />
+                      <div>
+                        <p className="text-sm text-gray-500">Telepon</p>
+                        <p className="text-sm font-medium">
+                          {selectedStudent.phone}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {selectedStudent.address && (
+                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                      <MapPin className="h-4 w-4 text-gray-500" />
+                      <div>
+                        <p className="text-sm text-gray-500">Alamat</p>
+                        <p className="text-sm font-medium">
+                          {selectedStudent.address}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  <h4 className="font-medium text-gray-900">
+                    Informasi Orang Tua
+                  </h4>
+                  {selectedStudent.parent_name && (
+                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                      <User className="h-4 w-4 text-gray-500" />
+                      <div>
+                        <p className="text-sm text-gray-500">Nama Orang Tua</p>
+                        <p className="text-sm font-medium">
+                          {selectedStudent.parent_name}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {selectedStudent.parent_phone && (
+                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                      <Phone className="h-4 w-4 text-gray-500" />
+                      <div>
+                        <p className="text-sm text-gray-500">
+                          Telepon Orang Tua
+                        </p>
+                        <p className="text-sm font-medium">
+                          {selectedStudent.parent_phone}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {selectedStudent.notes && (
+                <div className="space-y-2">
+                  <h4 className="font-medium text-gray-900">Catatan</h4>
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <p className="text-sm text-gray-700">
+                      {selectedStudent.notes}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between pt-4 border-t">
+                <div className="text-sm text-gray-500">
+                  Bergabung:{" "}
+                  {new Date(selectedStudent.created_at).toLocaleDateString(
+                    "id-ID",
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsDetailDialogOpen(false)}
+                  >
+                    Tutup
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="bg-blue-500 hover:bg-blue-600"
+                    onClick={() => {
+                      setIsDetailDialogOpen(false);
+                      handleScheduleLesson(selectedStudent);
+                    }}
+                  >
+                    <Calendar className="h-4 w-4 mr-2" />
+                    Jadwalkan Les
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Schedule Lesson Dialog */}
+      <Dialog
+        open={isScheduleDialogOpen}
+        onOpenChange={setIsScheduleDialogOpen}
+      >
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-3">
+              <Calendar className="h-5 w-5 text-blue-500" />
+              Jadwalkan Les - {selectedStudent?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="scheduleDate" className="text-right">
+                Tanggal *
+              </Label>
+              <Input
+                id="scheduleDate"
+                type="date"
+                value={scheduleFormData.date}
+                onChange={(e) =>
+                  setScheduleFormData({
+                    ...scheduleFormData,
+                    date: e.target.value,
+                  })
+                }
+                className="col-span-3"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="scheduleSubject" className="text-right">
+                Mata Pelajaran *
+              </Label>
+              <Select
+                value={scheduleFormData.subject}
+                onValueChange={(value) =>
+                  setScheduleFormData({ ...scheduleFormData, subject: value })
+                }
+              >
+                <SelectTrigger className="col-span-3">
+                  <SelectValue placeholder="Pilih mata pelajaran" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Matematika">Matematika</SelectItem>
+                  <SelectItem value="Fisika">Fisika</SelectItem>
+                  <SelectItem value="Kimia">Kimia</SelectItem>
+                  <SelectItem value="Biologi">Biologi</SelectItem>
+                  <SelectItem value="Bahasa Inggris">Bahasa Inggris</SelectItem>
+                  <SelectItem value="Bahasa Indonesia">
+                    Bahasa Indonesia
+                  </SelectItem>
+                  <SelectItem value="Calistung">Calistung</SelectItem>
+                  <SelectItem value="Bimbel Intensif UTBK & Sekolah Kedinasan">
+                    Bimbel Intensif UTBK & Sekolah Kedinasan
+                  </SelectItem>
+                  <SelectItem value="Robotics">Robotics</SelectItem>
+                  <SelectItem value="Pemrograman/Koding">
+                    Pemrograman/Koding
+                  </SelectItem>
+                  <SelectItem value="Ekonomi & Akuntansi">
+                    Ekonomi & Akuntansi
+                  </SelectItem>
+                  <SelectItem value="Gambar & Lukis">Gambar & Lukis</SelectItem>
+                  <SelectItem value="Musik Piano">Musik Piano</SelectItem>
+                  <SelectItem value="Musik Gitar">Musik Gitar</SelectItem>
+                  <SelectItem value="Musik Biola">Musik Biola</SelectItem>
+                  <SelectItem value="Musik Vokal">Musik Vokal</SelectItem>
+                  <SelectItem value="Musik Lainnya">Musik Lainnya</SelectItem>
+                  <SelectItem value="Komputer & Desain Grafis">
+                    Komputer & Desain Grafis
+                  </SelectItem>
+                  <SelectItem value="Tari">Tari</SelectItem>
+                  <SelectItem value="Olahraga Berenang">
+                    Olahraga Berenang
+                  </SelectItem>
+                  <SelectItem value="Olahraga Basket">
+                    Olahraga Basket
+                  </SelectItem>
+                  <SelectItem value="Olahraga Futsal">
+                    Olahraga Futsal
+                  </SelectItem>
+                  <SelectItem value="Olahraga Bulutangkis">
+                    Olahraga Bulutangkis
+                  </SelectItem>
+                  <SelectItem value="Olahraga Lainnya">
+                    Olahraga Lainnya
+                  </SelectItem>
+                  <SelectItem value="Anak Berkebutuhan Khusus">
+                    Anak Berkebutuhan Khusus
+                  </SelectItem>
+                  <SelectItem value="Mengaji">Mengaji</SelectItem>
+                  <SelectItem value="Public Speaking & Dakwah">
+                    Public Speaking & Dakwah
+                  </SelectItem>
+                  <SelectItem value="Les Lainnya">Les Lainnya</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="scheduleStartTime" className="text-right">
+                Waktu Mulai *
+              </Label>
+              <Input
+                id="scheduleStartTime"
+                type="time"
+                value={scheduleFormData.startTime}
+                onChange={(e) =>
+                  setScheduleFormData({
+                    ...scheduleFormData,
+                    startTime: e.target.value,
+                  })
+                }
+                className="col-span-3"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="scheduleEndTime" className="text-right">
+                Waktu Selesai *
+              </Label>
+              <Input
+                id="scheduleEndTime"
+                type="time"
+                value={scheduleFormData.endTime}
+                onChange={(e) =>
+                  setScheduleFormData({
+                    ...scheduleFormData,
+                    endTime: e.target.value,
+                  })
+                }
+                className="col-span-3"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="scheduleMeetingType" className="text-right">
+                Tipe Pertemuan
+              </Label>
+              <Select
+                value={scheduleFormData.meetingType}
+                onValueChange={(value) =>
+                  setScheduleFormData({
+                    ...scheduleFormData,
+                    meetingType: value,
+                  })
+                }
+              >
+                <SelectTrigger className="col-span-3">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="online">Online</SelectItem>
+                  <SelectItem value="offline">Offline</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="scheduleLocation" className="text-right">
+                Lokasi/URL
+              </Label>
+              <Input
+                id="scheduleLocation"
+                value={scheduleFormData.location}
+                onChange={(e) =>
+                  setScheduleFormData({
+                    ...scheduleFormData,
+                    location: e.target.value,
+                  })
+                }
+                className="col-span-3"
+                placeholder={
+                  scheduleFormData.meetingType === "online"
+                    ? "Link meeting"
+                    : "Alamat lokasi"
+                }
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="scheduleNotes" className="text-right">
+                Catatan
+              </Label>
+              <Textarea
+                id="scheduleNotes"
+                value={scheduleFormData.notes}
+                onChange={(e) =>
+                  setScheduleFormData({
+                    ...scheduleFormData,
+                    notes: e.target.value,
+                  })
+                }
+                className="col-span-3"
+                placeholder="Catatan tambahan (opsional)"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsScheduleDialogOpen(false);
+                setSelectedStudent(null);
+                setScheduleFormData({
+                  subject: "",
+                  startTime: "",
+                  endTime: "",
+                  location: "",
+                  meetingType: "online",
+                  meetingUrl: "",
+                  notes: "",
+                  date: new Date().toISOString().split("T")[0],
+                });
+              }}
+              disabled={scheduleLoading}
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={handleAddSchedule}
+              disabled={scheduleLoading}
+              className="bg-blue-500 hover:bg-blue-600"
+            >
+              {scheduleLoading ? "Menyimpan..." : "Simpan Jadwal"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

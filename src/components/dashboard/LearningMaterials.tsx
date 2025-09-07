@@ -275,6 +275,52 @@ const LearningMaterials = () => {
                     <SelectItem value="Bahasa Indonesia">
                       Bahasa Indonesia
                     </SelectItem>
+                    <SelectItem value="Calistung">Calistung</SelectItem>
+                    <SelectItem value="Bimbel Intensif UTBK & Sekolah Kedinasan">
+                      Bimbel Intensif UTBK & Sekolah Kedinasan
+                    </SelectItem>
+                    <SelectItem value="Robotics">Robotics</SelectItem>
+                    <SelectItem value="Pemrograman/Koding">
+                      Pemrograman/Koding
+                    </SelectItem>
+                    <SelectItem value="Ekonomi & Akuntansi">
+                      Ekonomi & Akuntansi
+                    </SelectItem>
+                    <SelectItem value="Gambar & Lukis">
+                      Gambar & Lukis
+                    </SelectItem>
+                    <SelectItem value="Musik Piano">Musik Piano</SelectItem>
+                    <SelectItem value="Musik Gitar">Musik Gitar</SelectItem>
+                    <SelectItem value="Musik Biola">Musik Biola</SelectItem>
+                    <SelectItem value="Musik Vokal">Musik Vokal</SelectItem>
+                    <SelectItem value="Musik Lainnya">Musik Lainnya</SelectItem>
+                    <SelectItem value="Komputer & Desain Grafis">
+                      Komputer & Desain Grafis
+                    </SelectItem>
+                    <SelectItem value="Tari">Tari</SelectItem>
+                    <SelectItem value="Olahraga Berenang">
+                      Olahraga Berenang
+                    </SelectItem>
+                    <SelectItem value="Olahraga Basket">
+                      Olahraga Basket
+                    </SelectItem>
+                    <SelectItem value="Olahraga Futsal">
+                      Olahraga Futsal
+                    </SelectItem>
+                    <SelectItem value="Olahraga Bulutangkis">
+                      Olahraga Bulutangkis
+                    </SelectItem>
+                    <SelectItem value="Olahraga Lainnya">
+                      Olahraga Lainnya
+                    </SelectItem>
+                    <SelectItem value="Anak Berkebutuhan Khusus">
+                      Anak Berkebutuhan Khusus
+                    </SelectItem>
+                    <SelectItem value="Mengaji">Mengaji</SelectItem>
+                    <SelectItem value="Public Speaking & Dakwah">
+                      Public Speaking & Dakwah
+                    </SelectItem>
+                    <SelectItem value="Les Lainnya">Les Lainnya</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
