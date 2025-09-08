@@ -137,13 +137,25 @@ const StudentsManagement = ({
         return;
       }
 
-      // Create schedule
+      // Create schedule with proper timezone handling
+      // Create date in local timezone (WIB/UTC+7) and convert to UTC for storage
+      const startDateTime = new Date(
+        `${scheduleFormData.date}T${scheduleFormData.startTime}:00`,
+      );
+      const endDateTime = new Date(
+        `${scheduleFormData.date}T${scheduleFormData.endTime}:00`,
+      );
+
+      // Convert from local time to UTC (subtract 7 hours for WIB)
+      startDateTime.setHours(startDateTime.getHours() - 7);
+      endDateTime.setHours(endDateTime.getHours() - 7);
+
       const { error } = await supabase.from("schedules").insert({
         tenant_id: tenantUser.tenant_id,
         student_id: selectedStudent.id,
         subject: scheduleFormData.subject,
-        start_time: `${scheduleFormData.date}T${scheduleFormData.startTime}:00`,
-        end_time: `${scheduleFormData.date}T${scheduleFormData.endTime}:00`,
+        start_time: startDateTime.toISOString(),
+        end_time: endDateTime.toISOString(),
         location: scheduleFormData.location,
         meeting_type: scheduleFormData.meetingType,
         meeting_url: scheduleFormData.meetingUrl,

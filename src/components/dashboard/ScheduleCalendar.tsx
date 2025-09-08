@@ -237,15 +237,29 @@ const ScheduleCalendar = forwardRef<ScheduleCalendarRef, ScheduleCalendarProps>(
                   (1000 * 60 * 60 * 100),
               ) / 10; // Duration in hours with 1 decimal
 
+            // Convert UTC time from database to local time (WIB/UTC+7) for display
+            const localStartTime = new Date(
+              startTime.getTime() + 7 * 60 * 60 * 1000,
+            );
+            const localEndTime = new Date(
+              endTime.getTime() + 7 * 60 * 60 * 1000,
+            );
+
+            const localDuration =
+              Math.round(
+                (localEndTime.getTime() - localStartTime.getTime()) /
+                  (1000 * 60 * 60 * 100),
+              ) / 10; // Duration in hours with 1 decimal
+
             return {
               id: item.id,
               studentName: item.students.name,
               subject: item.subject,
-              time: startTime.toLocaleTimeString("id-ID", {
+              time: localStartTime.toLocaleTimeString("id-ID", {
                 hour: "2-digit",
                 minute: "2-digit",
               }),
-              duration: `${duration} jam`,
+              duration: `${localDuration} jam`,
               location:
                 item.meeting_type === "online"
                   ? item.meeting_url || item.location || "Online"
@@ -374,13 +388,22 @@ const ScheduleCalendar = forwardRef<ScheduleCalendarRef, ScheduleCalendarProps>(
           return;
         }
 
-        // Create schedule
+        // Create schedule with proper timezone handling
+        const dateStr = selectedDate.toISOString().split("T")[0];
+        // Create date in local timezone (WIB/UTC+7) and convert to UTC for storage
+        const startDateTime = new Date(`${dateStr}T${formData.startTime}:00`);
+        const endDateTime = new Date(`${dateStr}T${formData.endTime}:00`);
+
+        // Convert from local time to UTC (subtract 7 hours for WIB)
+        startDateTime.setHours(startDateTime.getHours() - 7);
+        endDateTime.setHours(endDateTime.getHours() - 7);
+
         const { error } = await supabase.from("schedules").insert({
           tenant_id: tenantUser.tenant_id,
           student_id: formData.studentId,
           subject: formData.subject,
-          start_time: `${selectedDate.toISOString().split("T")[0]}T${formData.startTime}:00`,
-          end_time: `${selectedDate.toISOString().split("T")[0]}T${formData.endTime}:00`,
+          start_time: startDateTime.toISOString(),
+          end_time: endDateTime.toISOString(),
           location: formData.location,
           meeting_type: formData.meetingType,
           meeting_url: formData.meetingUrl,
@@ -424,18 +447,22 @@ const ScheduleCalendar = forwardRef<ScheduleCalendarRef, ScheduleCalendarProps>(
       const startDate = new Date(schedule.start_time);
       const endDate = new Date(schedule.end_time);
 
+      // Convert UTC time from database to local time (WIB/UTC+7) for editing
+      const wibStartDate = new Date(startDate.getTime() + 7 * 60 * 60 * 1000);
+      const wibEndDate = new Date(endDate.getTime() + 7 * 60 * 60 * 1000);
+
       setEditFormData({
         id: schedule.id,
         studentId: schedule.student_id,
         studentName: schedule.studentName,
         subject: schedule.subject,
-        startTime: startDate.toTimeString().slice(0, 5),
-        endTime: endDate.toTimeString().slice(0, 5),
+        startTime: wibStartDate.toTimeString().slice(0, 5),
+        endTime: wibEndDate.toTimeString().slice(0, 5),
         location: schedule.location,
         meetingType: schedule.meeting_type,
         meetingUrl: schedule.meeting_url || "",
         notes: schedule.notes || "",
-        date: startDate.toISOString().split("T")[0],
+        date: wibStartDate.toISOString().split("T")[0],
       });
       setIsEditDialogOpen(true);
     };
@@ -456,13 +483,25 @@ const ScheduleCalendar = forwardRef<ScheduleCalendarRef, ScheduleCalendarProps>(
       try {
         setLoading(true);
 
-        // Update schedule
+        // Update schedule with proper timezone handling
+        // Create date in local timezone (WIB/UTC+7) and convert to UTC for storage
+        const startDateTime = new Date(
+          `${editFormData.date}T${editFormData.startTime}:00`,
+        );
+        const endDateTime = new Date(
+          `${editFormData.date}T${editFormData.endTime}:00`,
+        );
+
+        // Convert from local time to UTC (subtract 7 hours for WIB)
+        startDateTime.setHours(startDateTime.getHours() - 7);
+        endDateTime.setHours(endDateTime.getHours() - 7);
+
         const { error } = await supabase
           .from("schedules")
           .update({
             subject: editFormData.subject,
-            start_time: `${editFormData.date}T${editFormData.startTime}:00`,
-            end_time: `${editFormData.date}T${editFormData.endTime}:00`,
+            start_time: startDateTime.toISOString(),
+            end_time: endDateTime.toISOString(),
             location: editFormData.location,
             meeting_type: editFormData.meetingType,
             meeting_url: editFormData.meetingUrl,
@@ -1260,6 +1299,7 @@ const ScheduleCalendar = forwardRef<ScheduleCalendarRef, ScheduleCalendarProps>(
                             year: "numeric",
                             month: "long",
                             day: "numeric",
+                            timeZone: "Asia/Jakarta",
                           })}
                         </p>
                       </div>
