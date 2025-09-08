@@ -191,8 +191,22 @@ const ScheduleCalendar = forwardRef<ScheduleCalendarRef, ScheduleCalendarProps>(
 
         if (!tenantUser) return;
 
-        // Get selected date in YYYY-MM-DD format
-        const dateStr = selectedDate.toISOString().split("T")[0];
+        // Get selected date in local timezone (WIB/UTC+7)
+        const localDate = new Date(selectedDate);
+        const year = localDate.getFullYear();
+        const month = String(localDate.getMonth() + 1).padStart(2, "0");
+        const day = String(localDate.getDate()).padStart(2, "0");
+        const dateStr = `${year}-${month}-${day}`;
+
+        // Create start and end of day in local timezone, then convert to UTC for database query
+        const startOfDay = new Date(`${dateStr}T00:00:00`);
+        const endOfDay = new Date(`${dateStr}T23:59:59`);
+
+        // Convert to UTC by subtracting 7 hours (WIB offset)
+        const utcStartOfDay = new Date(
+          startOfDay.getTime() - 7 * 60 * 60 * 1000,
+        );
+        const utcEndOfDay = new Date(endOfDay.getTime() - 7 * 60 * 60 * 1000);
 
         // Fetch schedules for selected date with student information
         const { data, error } = await supabase
@@ -217,8 +231,8 @@ const ScheduleCalendar = forwardRef<ScheduleCalendarRef, ScheduleCalendarProps>(
         `,
           )
           .eq("tenant_id", tenantUser.tenant_id)
-          .gte("start_time", `${dateStr}T00:00:00`)
-          .lt("start_time", `${dateStr}T23:59:59`)
+          .gte("start_time", utcStartOfDay.toISOString())
+          .lte("start_time", utcEndOfDay.toISOString())
           .order("start_time", { ascending: true });
 
         if (error) {
