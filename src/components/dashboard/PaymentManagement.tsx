@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/select";
 import { supabase } from "../../../supabase/supabase";
 import { useAuth } from "../../../supabase/auth";
+import { Tables } from "@/types/supabase";
 
 interface PaymentRecord {
   id: string;
@@ -42,44 +43,16 @@ interface PaymentRecord {
   subject: string;
 }
 
-const defaultPayments: PaymentRecord[] = [
-  {
-    id: "1",
-    studentName: "Andi Pratama",
-    amount: 800000,
-    date: "2024-03-15",
-    status: "paid",
-    method: "Transfer Bank",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Andi",
-    subject: "Matematika SMA",
-  },
-  {
-    id: "2",
-    studentName: "Sari Dewi",
-    amount: 600000,
-    date: "2024-03-20",
-    status: "pending",
-    method: "E-Wallet",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Sari",
-    subject: "Fisika SMP",
-  },
-  {
-    id: "3",
-    studentName: "Budi Santoso",
-    amount: 500000,
-    date: "2024-03-10",
-    status: "overdue",
-    method: "Cash",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Budi",
-    subject: "Bahasa Inggris SD",
-  },
-];
+type PaymentWithStudent = Tables<"payments"> & {
+  students: Tables<"students"> | null;
+};
 
 const PaymentManagement = () => {
-  const [payments, setPayments] = useState(defaultPayments);
+  const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
   const [students, setStudents] = useState<
     Array<{ id: string; name: string; subject?: string }>
   >([]);
@@ -96,10 +69,81 @@ const PaymentManagement = () => {
   });
 
   useEffect(() => {
+    if (user) {
+      fetchPayments();
+    }
+  }, [user]);
+
+  useEffect(() => {
     if (user && isAddDialogOpen) {
       fetchStudents();
     }
   }, [user, isAddDialogOpen]);
+
+  const fetchPayments = async () => {
+    if (!user) return;
+
+    try {
+      setDataLoading(true);
+
+      // Get user's tenant
+      const { data: tenantUser } = await supabase
+        .from("tenant_users")
+        .select("tenant_id")
+        .eq("user_id", user.id)
+        .single();
+
+      if (!tenantUser) {
+        setDataLoading(false);
+        return;
+      }
+
+      // Fetch payments with student information
+      const { data, error } = await supabase
+        .from("payments")
+        .select(
+          `
+          *,
+          students (
+            id,
+            name,
+            subject,
+            avatar_url
+          )
+        `,
+        )
+        .eq("tenant_id", tenantUser.tenant_id)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("Error fetching payments:", error);
+        setDataLoading(false);
+        return;
+      }
+
+      // Transform data to match PaymentRecord interface
+      const transformedPayments: PaymentRecord[] = (
+        data as PaymentWithStudent[]
+      ).map((payment) => ({
+        id: payment.id,
+        studentName: payment.students?.name || "Unknown Student",
+        amount: payment.amount,
+        date: new Date(payment.payment_date).toLocaleDateString("id-ID"),
+        status: (payment.status as "paid" | "pending" | "overdue") || "pending",
+        method: payment.payment_method || "Unknown",
+        avatar:
+          payment.students?.avatar_url ||
+          `https://api.dicebear.com/7.x/avataaars/svg?seed=${payment.students?.name || "default"}`,
+        subject: payment.students?.subject || "Unknown Subject",
+      }));
+
+      setPayments(transformedPayments);
+    } catch (error) {
+      console.error("Error:", error);
+    } finally {
+      setDataLoading(false);
+    }
+  };
 
   const fetchStudents = async () => {
     if (!user) return;
@@ -187,19 +231,8 @@ const PaymentManagement = () => {
         return;
       }
 
-      // Add to local state for immediate display
-      const newPayment: PaymentRecord = {
-        id: Date.now().toString(),
-        studentName: formData.studentName,
-        amount: parseFloat(formData.amount),
-        date: formData.paymentDate,
-        status: formData.status as "paid" | "pending" | "overdue",
-        method: formData.paymentMethod,
-        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${formData.studentName}`,
-        subject: "Mata Pelajaran", // You might want to get this from student data
-      };
-
-      setPayments((prev) => [newPayment, ...prev]);
+      // Refresh payments data to show the new payment
+      await fetchPayments();
 
       // Reset form and close dialog
       setFormData({
@@ -255,6 +288,56 @@ const PaymentManagement = () => {
     }).format(amount);
   };
 
+  const handleExport = () => {
+    if (payments.length === 0) {
+      alert("Tidak ada data untuk diekspor");
+      return;
+    }
+
+    // Create CSV content
+    const headers = [
+      "Nama Siswa",
+      "Mata Pelajaran",
+      "Jumlah",
+      "Tanggal",
+      "Status",
+      "Metode Pembayaran",
+    ];
+    const csvContent = [
+      headers.join(","),
+      ...payments.map((payment) =>
+        [
+          `"${payment.studentName}"`,
+          `"${payment.subject}"`,
+          payment.amount,
+          `"${payment.date}"`,
+          `"${getStatusText(payment.status)}"`,
+          `"${payment.method}"`,
+        ].join(","),
+      ),
+    ].join("\n");
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute(
+      "download",
+      `laporan-pembayaran-${new Date().toISOString().split("T")[0]}.csv`,
+    );
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const filteredPayments = payments.filter(
+    (payment) =>
+      payment.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      payment.subject.toLowerCase().includes(searchTerm.toLowerCase()),
+  );
+
   const totalRevenue = payments.reduce(
     (sum, payment) => (payment.status === "paid" ? sum + payment.amount : sum),
     0,
@@ -285,7 +368,12 @@ const PaymentManagement = () => {
           </p>
         </div>
         <div className="flex gap-3">
-          <Button variant="outline" className="rounded-full px-4 h-10">
+          <Button
+            variant="outline"
+            className="rounded-full px-4 h-10"
+            onClick={handleExport}
+            disabled={payments.length === 0}
+          >
             <Download className="mr-2 h-4 w-4" />
             Export
           </Button>
@@ -437,8 +525,13 @@ const PaymentManagement = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Total Pendapatan</p>
-                <p className="text-2xl font-semibold text-gray-900 mt-1">
-                  {formatCurrency(totalRevenue)}
+                <div className="text-3xl font-semibold text-gray-900">
+                  {payments.length > 0
+                    ? formatCurrency(totalRevenue / payments.length)
+                    : "Rp 0"}
+                </div>
+                <p className="text-sm text-gray-500 mt-1">
+                  Rata-rata per transaksi
                 </p>
               </div>
               <div className="h-12 w-12 bg-green-100 rounded-full flex items-center justify-center">
@@ -514,46 +607,65 @@ const PaymentManagement = () => {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {payments.map((payment) => (
-              <div
-                key={payment.id}
-                className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
-              >
-                <div className="flex items-center gap-4">
-                  <Avatar className="h-12 w-12">
-                    <AvatarImage
-                      src={payment.avatar}
-                      alt={payment.studentName}
-                    />
-                    <AvatarFallback>{payment.studentName[0]}</AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <h4 className="font-medium text-gray-900">
-                      {payment.studentName}
-                    </h4>
-                    <p className="text-sm text-gray-600">{payment.subject}</p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {payment.method} • {payment.date}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="text-right">
-                    <p className="font-semibold text-gray-900">
-                      {formatCurrency(payment.amount)}
-                    </p>
-                    <Badge className={getStatusColor(payment.status)}>
-                      {getStatusText(payment.status)}
-                    </Badge>
-                  </div>
-                  <Button variant="outline" size="sm" className="rounded-full">
-                    Detail
-                  </Button>
-                </div>
+          {dataLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="text-center">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600 mx-auto"></div>
+                <p className="mt-2 text-sm text-gray-500">
+                  Memuat data pembayaran...
+                </p>
               </div>
-            ))}
-          </div>
+            </div>
+          ) : filteredPayments.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-gray-500">Belum ada data pembayaran</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredPayments.map((payment) => (
+                <div
+                  key={payment.id}
+                  className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-4">
+                    <Avatar className="h-12 w-12">
+                      <AvatarImage
+                        src={payment.avatar}
+                        alt={payment.studentName}
+                      />
+                      <AvatarFallback>{payment.studentName[0]}</AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <h4 className="font-medium text-gray-900">
+                        {payment.studentName}
+                      </h4>
+                      <p className="text-sm text-gray-600">{payment.subject}</p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {payment.method} • {payment.date}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="font-semibold text-gray-900">
+                        {formatCurrency(payment.amount)}
+                      </p>
+                      <Badge className={getStatusColor(payment.status)}>
+                        {getStatusText(payment.status)}
+                      </Badge>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full"
+                    >
+                      Detail
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -4,6 +4,9 @@ import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { CalendarDays, BarChart2, Users, Clock } from "lucide-react";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { supabase } from "../../../supabase/supabase";
+import { useAuth } from "../../../supabase/auth";
+import { Tables } from "@/types/supabase";
 
 interface ProjectCardProps {
   title: string;
@@ -17,41 +20,19 @@ interface DashboardGridProps {
   isLoading?: boolean;
 }
 
-const defaultProjects: ProjectCardProps[] = [
-  {
-    title: "Matematika SMA - Kelas 12",
-    progress: 75,
-    team: [
-      {
-        name: "Andi Pratama",
-        avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Andi",
-      },
-    ],
-    dueDate: "2024-04-15",
-  },
-  {
-    title: "Fisika SMP - Kelas 9",
-    progress: 45,
-    team: [
-      {
-        name: "Sari Dewi",
-        avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Sari",
-      },
-    ],
-    dueDate: "2024-05-01",
-  },
-  {
-    title: "Bahasa Inggris SD - Kelas 6",
-    progress: 90,
-    team: [
-      {
-        name: "Budi Santoso",
-        avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Budi",
-      },
-    ],
-    dueDate: "2024-03-30",
-  },
-];
+interface DashboardStats {
+  totalStudents: number;
+  todaySchedules: number;
+  monthlyRevenue: number;
+  recentStudents: Array<{
+    id: string;
+    name: string;
+    subject: string;
+    avatar: string;
+    progress: number;
+    nextSession: string;
+  }>;
+}
 
 const ProjectCard = ({ title, progress, team, dueDate }: ProjectCardProps) => {
   return (
@@ -107,10 +88,23 @@ const ProjectCard = ({ title, progress, team, dueDate }: ProjectCardProps) => {
 };
 
 const DashboardGrid = ({
-  projects = defaultProjects,
+  projects = [],
   isLoading = false,
 }: DashboardGridProps) => {
   const [loading, setLoading] = useState(isLoading);
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats>({
+    totalStudents: 0,
+    todaySchedules: 0,
+    monthlyRevenue: 0,
+    recentStudents: [],
+  });
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (user) {
+      fetchDashboardData();
+    }
+  }, [user]);
 
   // Simulate loading for demo purposes
   useEffect(() => {
@@ -121,6 +115,117 @@ const DashboardGrid = ({
       return () => clearTimeout(timer);
     }
   }, [isLoading]);
+
+  const fetchDashboardData = async () => {
+    if (!user) return;
+
+    try {
+      setLoading(true);
+
+      // Get user's tenant
+      const { data: tenantUser } = await supabase
+        .from("tenant_users")
+        .select("tenant_id")
+        .eq("user_id", user.id)
+        .single();
+
+      if (!tenantUser) {
+        setLoading(false);
+        return;
+      }
+
+      // Fetch total active students
+      const { data: studentsData, error: studentsError } = await supabase
+        .from("students")
+        .select("*")
+        .eq("tenant_id", tenantUser.tenant_id)
+        .eq("is_active", true);
+
+      if (studentsError) {
+        console.error("Error fetching students:", studentsError);
+      }
+
+      // Fetch today's schedules
+      const today = new Date();
+      const todayStart = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate(),
+      );
+      const todayEnd = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate() + 1,
+      );
+
+      const { data: schedulesData, error: schedulesError } = await supabase
+        .from("schedules")
+        .select("*")
+        .eq("tenant_id", tenantUser.tenant_id)
+        .gte("start_time", todayStart.toISOString())
+        .lt("start_time", todayEnd.toISOString());
+
+      if (schedulesError) {
+        console.error("Error fetching schedules:", schedulesError);
+      }
+
+      // Fetch monthly revenue (current month)
+      const currentMonth = new Date();
+      const monthStart = new Date(
+        currentMonth.getFullYear(),
+        currentMonth.getMonth(),
+        1,
+      );
+      const monthEnd = new Date(
+        currentMonth.getFullYear(),
+        currentMonth.getMonth() + 1,
+        0,
+      );
+
+      const { data: paymentsData, error: paymentsError } = await supabase
+        .from("payments")
+        .select("amount")
+        .eq("tenant_id", tenantUser.tenant_id)
+        .eq("status", "paid")
+        .gte("payment_date", monthStart.toISOString().split("T")[0])
+        .lte("payment_date", monthEnd.toISOString().split("T")[0]);
+
+      if (paymentsError) {
+        console.error("Error fetching payments:", paymentsError);
+      }
+
+      // Calculate monthly revenue
+      const monthlyRevenue =
+        paymentsData?.reduce((sum, payment) => sum + payment.amount, 0) || 0;
+
+      // Transform students data for recent students display
+      const recentStudents = (studentsData || [])
+        .slice(0, 6)
+        .map((student, index) => ({
+          id: student.id,
+          name: student.name,
+          subject: student.subject || "Mata Pelajaran",
+          avatar:
+            student.avatar_url ||
+            `https://api.dicebear.com/7.x/avataaars/svg?seed=${student.name}`,
+          progress: Math.floor(Math.random() * 40) + 60, // Random progress between 60-100
+          nextSession: new Date(Date.now() + (index + 1) * 24 * 60 * 60 * 1000)
+            .toISOString()
+            .split("T")[0],
+        }));
+
+      setDashboardStats({
+        totalStudents: studentsData?.length || 0,
+        todaySchedules: schedulesData?.length || 0,
+        monthlyRevenue,
+        recentStudents,
+      });
+    } catch (error) {
+      console.error("Error fetching dashboard data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -164,7 +269,7 @@ const DashboardGrid = ({
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold text-gray-900">
-              {projects.length}
+              {dashboardStats.totalStudents}
             </div>
             <p className="text-sm text-gray-500 mt-1">Siswa aktif bulan ini</p>
           </CardContent>
@@ -179,7 +284,9 @@ const DashboardGrid = ({
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold text-gray-900">5</div>
+            <div className="text-3xl font-semibold text-gray-900">
+              {dashboardStats.todaySchedules}
+            </div>
             <p className="text-sm text-gray-500 mt-1">Sesi mengajar hari ini</p>
           </CardContent>
         </Card>
@@ -193,15 +300,38 @@ const DashboardGrid = ({
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold text-gray-900">Rp 4.5M</div>
-            <p className="text-sm text-gray-500 mt-1">+12% dari bulan lalu</p>
+            <div className="text-3xl font-semibold text-gray-900">
+              {new Intl.NumberFormat("id-ID", {
+                style: "currency",
+                currency: "IDR",
+                minimumFractionDigits: 0,
+              }).format(dashboardStats.monthlyRevenue)}
+            </div>
+            <p className="text-sm text-gray-500 mt-1">Pendapatan bulan ini</p>
           </CardContent>
         </Card>
 
-        {/* Project Cards */}
-        {projects.map((project, index) => (
-          <ProjectCard key={index} {...project} />
+        {/* Recent Students Cards */}
+        {dashboardStats.recentStudents.map((student) => (
+          <ProjectCard
+            key={student.id}
+            title={`${student.subject} - ${student.name}`}
+            progress={student.progress}
+            team={[{ name: student.name, avatar: student.avatar }]}
+            dueDate={student.nextSession}
+          />
         ))}
+
+        {/* Show message if no students */}
+        {!loading && dashboardStats.recentStudents.length === 0 && (
+          <Card className="bg-white/90 backdrop-blur-sm border border-gray-100 rounded-2xl shadow-sm col-span-full">
+            <CardContent className="flex items-center justify-center py-8">
+              <p className="text-gray-500">
+                Belum ada data siswa. Tambahkan siswa untuk melihat aktivitas.
+              </p>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

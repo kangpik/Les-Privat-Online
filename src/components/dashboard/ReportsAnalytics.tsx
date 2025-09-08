@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../../../supabase/supabase";
 import { useAuth } from "../../../supabase/auth";
+import { Tables } from "@/types/supabase";
 
 interface ReportData {
   totalStudents: number;
@@ -31,6 +32,14 @@ interface ReportData {
     sessions: number;
   }>;
 }
+
+type PaymentWithStudent = Tables<"payments"> & {
+  students: Tables<"students"> | null;
+};
+
+type ScheduleWithStudent = Tables<"schedules"> & {
+  students: Tables<"students"> | null;
+};
 
 const ReportsAnalytics = () => {
   const [reportData, setReportData] = useState<ReportData | null>(null);
@@ -57,55 +66,178 @@ const ReportsAnalytics = () => {
 
       if (!tenantUser) return;
 
-      // Fetch students count
-      const { count: studentsCount } = await supabase
+      // Fetch students with count
+      const { data: studentsData, error: studentsError } = await supabase
         .from("students")
-        .select("*", { count: "exact", head: true })
+        .select("*")
         .eq("tenant_id", tenantUser.tenant_id)
         .eq("is_active", true);
 
-      // Fetch payments for revenue calculation
-      const { data: payments } = await supabase
+      if (studentsError) {
+        console.error("Error fetching students:", studentsError);
+      }
+
+      // Fetch payments with student information
+      const { data: paymentsData, error: paymentsError } = await supabase
         .from("payments")
-        .select("amount, payment_date, status")
+        .select(
+          `
+          *,
+          students (
+            id,
+            name,
+            subject
+          )
+        `,
+        )
         .eq("tenant_id", tenantUser.tenant_id)
         .eq("status", "paid");
 
-      // Fetch schedules for session count
-      const { count: sessionsCount } = await supabase
+      if (paymentsError) {
+        console.error("Error fetching payments:", paymentsError);
+      }
+
+      // Fetch schedules with student information
+      const { data: schedulesData, error: schedulesError } = await supabase
         .from("schedules")
-        .select("*", { count: "exact", head: true })
-        .eq("tenant_id", tenantUser.tenant_id)
-        .eq("status", "completed");
+        .select(
+          `
+          *,
+          students (
+            id,
+            name,
+            subject
+          )
+        `,
+        )
+        .eq("tenant_id", tenantUser.tenant_id);
+
+      if (schedulesError) {
+        console.error("Error fetching schedules:", schedulesError);
+      }
 
       // Calculate totals
-      const totalRevenue =
-        payments?.reduce((sum, payment) => sum + Number(payment.amount), 0) ||
-        0;
+      const totalRevenue = (
+        (paymentsData as PaymentWithStudent[]) || []
+      ).reduce((sum, payment) => sum + Number(payment.amount), 0);
 
-      // Mock data for demonstration (replace with real calculations)
-      const mockData: ReportData = {
-        totalStudents: studentsCount || 0,
-        totalRevenue: totalRevenue,
-        totalSessions: sessionsCount || 0,
-        averageSessionDuration: 90, // minutes
-        monthlyGrowth: 12.5,
-        revenueGrowth: 18.3,
-        topSubjects: [
-          { subject: "Matematika", count: 8, revenue: 6400000 },
-          { subject: "Fisika", count: 5, revenue: 4000000 },
-          { subject: "Kimia", count: 3, revenue: 2400000 },
-          { subject: "Bahasa Inggris", count: 4, revenue: 3200000 },
-        ],
-        monthlyStats: [
-          { month: "Jan", students: 8, revenue: 6400000, sessions: 32 },
-          { month: "Feb", students: 10, revenue: 8000000, sessions: 40 },
-          { month: "Mar", students: 12, revenue: 9600000, sessions: 48 },
-          { month: "Apr", students: 15, revenue: 12000000, sessions: 60 },
-        ],
+      const totalSessions = schedulesData?.length || 0;
+      const completedSessions =
+        schedulesData?.filter((s) => s.status === "completed").length || 0;
+
+      // Calculate average session duration
+      const sessionsWithDuration = (
+        (schedulesData as ScheduleWithStudent[]) || []
+      ).filter((s) => s.start_time && s.end_time);
+      const totalDuration = sessionsWithDuration.reduce((sum, session) => {
+        const start = new Date(session.start_time);
+        const end = new Date(session.end_time);
+        return sum + (end.getTime() - start.getTime()) / (1000 * 60); // in minutes
+      }, 0);
+      const averageSessionDuration =
+        sessionsWithDuration.length > 0
+          ? Math.round(totalDuration / sessionsWithDuration.length)
+          : 90;
+
+      // Calculate top subjects
+      const subjectStats: {
+        [key: string]: { count: number; revenue: number };
+      } = {};
+
+      ((paymentsData as PaymentWithStudent[]) || []).forEach((payment) => {
+        const subject = payment.students?.subject || "Lainnya";
+        if (!subjectStats[subject]) {
+          subjectStats[subject] = { count: 0, revenue: 0 };
+        }
+        subjectStats[subject].revenue += Number(payment.amount);
+      });
+
+      ((schedulesData as ScheduleWithStudent[]) || []).forEach((schedule) => {
+        const subject = schedule.subject || "Lainnya";
+        if (!subjectStats[subject]) {
+          subjectStats[subject] = { count: 0, revenue: 0 };
+        }
+        subjectStats[subject].count += 1;
+      });
+
+      const topSubjects = Object.entries(subjectStats)
+        .map(([subject, stats]) => ({ subject, ...stats }))
+        .sort((a, b) => b.revenue - a.revenue)
+        .slice(0, 5);
+
+      // Calculate monthly stats for the last 6 months
+      const monthlyStats = [];
+      const now = new Date();
+
+      for (let i = 5; i >= 0; i--) {
+        const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const nextMonthDate = new Date(
+          now.getFullYear(),
+          now.getMonth() - i + 1,
+          1,
+        );
+
+        const monthPayments = (
+          (paymentsData as PaymentWithStudent[]) || []
+        ).filter((p) => {
+          const paymentDate = new Date(p.payment_date);
+          return paymentDate >= monthDate && paymentDate < nextMonthDate;
+        });
+
+        const monthSchedules = (
+          (schedulesData as ScheduleWithStudent[]) || []
+        ).filter((s) => {
+          const scheduleDate = new Date(s.start_time);
+          return scheduleDate >= monthDate && scheduleDate < nextMonthDate;
+        });
+
+        const monthStudents = new Set(
+          monthSchedules.map((s) => s.student_id).filter(Boolean),
+        ).size;
+
+        monthlyStats.push({
+          month: monthDate.toLocaleDateString("id-ID", { month: "short" }),
+          students: monthStudents,
+          revenue: monthPayments.reduce((sum, p) => sum + Number(p.amount), 0),
+          sessions: monthSchedules.length,
+        });
+      }
+
+      // Calculate growth rates
+      const currentMonthRevenue =
+        monthlyStats[monthlyStats.length - 1]?.revenue || 0;
+      const previousMonthRevenue =
+        monthlyStats[monthlyStats.length - 2]?.revenue || 0;
+      const revenueGrowth =
+        previousMonthRevenue > 0
+          ? ((currentMonthRevenue - previousMonthRevenue) /
+              previousMonthRevenue) *
+            100
+          : 0;
+
+      const currentMonthStudents =
+        monthlyStats[monthlyStats.length - 1]?.students || 0;
+      const previousMonthStudents =
+        monthlyStats[monthlyStats.length - 2]?.students || 0;
+      const monthlyGrowth =
+        previousMonthStudents > 0
+          ? ((currentMonthStudents - previousMonthStudents) /
+              previousMonthStudents) *
+            100
+          : 0;
+
+      const reportData: ReportData = {
+        totalStudents: studentsData?.length || 0,
+        totalRevenue,
+        totalSessions,
+        averageSessionDuration,
+        monthlyGrowth: Math.round(monthlyGrowth * 10) / 10,
+        revenueGrowth: Math.round(revenueGrowth * 10) / 10,
+        topSubjects,
+        monthlyStats,
       };
 
-      setReportData(mockData);
+      setReportData(reportData);
     } catch (error) {
       console.error("Error fetching report data:", error);
     } finally {
@@ -119,6 +251,178 @@ const ReportsAnalytics = () => {
       currency: "IDR",
       minimumFractionDigits: 0,
     }).format(amount);
+  };
+
+  const handleExportPDF = async () => {
+    if (!reportData) {
+      alert("Tidak ada data untuk diekspor");
+      return;
+    }
+
+    try {
+      // Create HTML content for PDF
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Laporan Analitik - ${new Date().toLocaleDateString("id-ID")}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; color: #333; }
+            .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #3b82f6; padding-bottom: 20px; }
+            .header h1 { color: #3b82f6; margin: 0; }
+            .header p { color: #666; margin: 5px 0; }
+            .metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 30px; }
+            .metric-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; background: #f9fafb; }
+            .metric-title { font-size: 14px; color: #6b7280; margin-bottom: 8px; }
+            .metric-value { font-size: 24px; font-weight: bold; color: #1f2937; }
+            .metric-growth { font-size: 12px; color: #10b981; margin-top: 4px; }
+            .section { margin-bottom: 30px; }
+            .section h2 { color: #1f2937; border-bottom: 1px solid #e5e7eb; padding-bottom: 10px; }
+            .subjects-table, .monthly-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+            .subjects-table th, .subjects-table td, .monthly-table th, .monthly-table td { 
+              border: 1px solid #e5e7eb; padding: 12px; text-align: left; 
+            }
+            .subjects-table th, .monthly-table th { background: #f3f4f6; font-weight: bold; }
+            .insights { background: #f0f9ff; border: 1px solid #0ea5e9; border-radius: 8px; padding: 20px; }
+            .insights h3 { color: #0369a1; margin-top: 0; }
+            .insights ul { margin: 10px 0; padding-left: 20px; }
+            .footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 12px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Laporan Analitik Les Privat</h1>
+            <p>Periode: ${selectedPeriod === "month" ? "Bulan Ini" : selectedPeriod === "week" ? "Minggu Ini" : selectedPeriod === "quarter" ? "Kuartal Ini" : "Tahun Ini"}</p>
+            <p>Tanggal Dibuat: ${new Date().toLocaleDateString("id-ID", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
+          </div>
+
+          <div class="metrics">
+            <div class="metric-card">
+              <div class="metric-title">Total Pendapatan</div>
+              <div class="metric-value">${formatCurrency(reportData.totalRevenue)}</div>
+              <div class="metric-growth">+${reportData.revenueGrowth}% dari bulan lalu</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-title">Total Siswa</div>
+              <div class="metric-value">${reportData.totalStudents}</div>
+              <div class="metric-growth">+${reportData.monthlyGrowth}% dari bulan lalu</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-title">Total Sesi</div>
+              <div class="metric-value">${reportData.totalSessions}</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-title">Rata-rata Durasi Sesi</div>
+              <div class="metric-value">${reportData.averageSessionDuration} menit</div>
+            </div>
+          </div>
+
+          <div class="section">
+            <h2>Mata Pelajaran Terpopuler</h2>
+            <table class="subjects-table">
+              <thead>
+                <tr>
+                  <th>Ranking</th>
+                  <th>Mata Pelajaran</th>
+                  <th>Jumlah Sesi</th>
+                  <th>Pendapatan</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${reportData.topSubjects
+                  .map(
+                    (subject, index) => `
+                  <tr>
+                    <td>${index + 1}</td>
+                    <td>${subject.subject}</td>
+                    <td>${subject.count}</td>
+                    <td>${formatCurrency(subject.revenue)}</td>
+                  </tr>
+                `,
+                  )
+                  .join("")}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="section">
+            <h2>Tren Bulanan (6 Bulan Terakhir)</h2>
+            <table class="monthly-table">
+              <thead>
+                <tr>
+                  <th>Bulan</th>
+                  <th>Siswa</th>
+                  <th>Sesi</th>
+                  <th>Pendapatan</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${reportData.monthlyStats
+                  .map(
+                    (stat) => `
+                  <tr>
+                    <td>${stat.month}</td>
+                    <td>${stat.students}</td>
+                    <td>${stat.sessions}</td>
+                    <td>${formatCurrency(stat.revenue)}</td>
+                  </tr>
+                `,
+                  )
+                  .join("")}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="section">
+            <div class="insights">
+              <h3>Insight Performa</h3>
+              <ul>
+                <li><strong>Pertumbuhan Positif:</strong> Pendapatan ${reportData.revenueGrowth >= 0 ? "meningkat" : "menurun"} ${Math.abs(reportData.revenueGrowth)}% dibanding bulan lalu.</li>
+                <li><strong>Jumlah Siswa:</strong> Total ${reportData.totalStudents} siswa aktif dengan pertumbuhan ${reportData.monthlyGrowth >= 0 ? "positif" : "negatif"} ${Math.abs(reportData.monthlyGrowth)}%.</li>
+                <li><strong>Efisiensi Mengajar:</strong> Rata-rata durasi sesi ${reportData.averageSessionDuration} menit dengan total ${reportData.totalSessions} sesi.</li>
+                <li><strong>Mata Pelajaran Favorit:</strong> ${reportData.topSubjects[0]?.subject || "Belum ada data"} menjadi mata pelajaran dengan pendapatan tertinggi.</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="footer">
+            <p>Laporan ini dibuat secara otomatis oleh Sistem Manajemen Les Privat</p>
+            <p>© ${new Date().getFullYear()} - Semua hak dilindungi</p>
+          </div>
+        </body>
+        </html>
+      `;
+
+      // Create a new window for printing
+      const printWindow = window.open("", "_blank");
+      if (printWindow) {
+        printWindow.document.write(htmlContent);
+        printWindow.document.close();
+
+        // Wait for content to load then print
+        printWindow.onload = () => {
+          setTimeout(() => {
+            printWindow.print();
+            printWindow.close();
+          }, 500);
+        };
+      } else {
+        // Fallback: create downloadable HTML file
+        const blob = new Blob([htmlContent], { type: "text/html" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `laporan-analitik-${new Date().toISOString().split("T")[0]}.html`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }
+    } catch (error) {
+      console.error("Error exporting PDF:", error);
+      alert("Gagal mengekspor PDF. Silakan coba lagi.");
+    }
   };
 
   if (loading) {
@@ -170,7 +474,12 @@ const ReportsAnalytics = () => {
             <option value="quarter">Kuartal Ini</option>
             <option value="year">Tahun Ini</option>
           </select>
-          <Button variant="outline" className="rounded-full px-4 h-10">
+          <Button
+            variant="outline"
+            className="rounded-full px-4 h-10"
+            onClick={handleExportPDF}
+            disabled={!reportData || loading}
+          >
             <Download className="mr-2 h-4 w-4" />
             Export PDF
           </Button>
@@ -188,9 +497,20 @@ const ReportsAnalytics = () => {
                   {formatCurrency(reportData.totalRevenue)}
                 </p>
                 <div className="flex items-center mt-2">
-                  <TrendingUp className="h-4 w-4 text-green-500 mr-1" />
-                  <span className="text-sm text-green-600 font-medium">
-                    +{reportData.revenueGrowth}%
+                  {reportData.revenueGrowth >= 0 ? (
+                    <TrendingUp className="h-4 w-4 text-green-500 mr-1" />
+                  ) : (
+                    <TrendingDown className="h-4 w-4 text-red-500 mr-1" />
+                  )}
+                  <span
+                    className={`text-sm font-medium ${
+                      reportData.revenueGrowth >= 0
+                        ? "text-green-600"
+                        : "text-red-600"
+                    }`}
+                  >
+                    {reportData.revenueGrowth >= 0 ? "+" : ""}
+                    {reportData.revenueGrowth}%
                   </span>
                 </div>
               </div>
@@ -210,9 +530,20 @@ const ReportsAnalytics = () => {
                   {reportData.totalStudents}
                 </p>
                 <div className="flex items-center mt-2">
-                  <TrendingUp className="h-4 w-4 text-blue-500 mr-1" />
-                  <span className="text-sm text-blue-600 font-medium">
-                    +{reportData.monthlyGrowth}%
+                  {reportData.monthlyGrowth >= 0 ? (
+                    <TrendingUp className="h-4 w-4 text-blue-500 mr-1" />
+                  ) : (
+                    <TrendingDown className="h-4 w-4 text-red-500 mr-1" />
+                  )}
+                  <span
+                    className={`text-sm font-medium ${
+                      reportData.monthlyGrowth >= 0
+                        ? "text-blue-600"
+                        : "text-red-600"
+                    }`}
+                  >
+                    {reportData.monthlyGrowth >= 0 ? "+" : ""}
+                    {reportData.monthlyGrowth}%
                   </span>
                 </div>
               </div>
@@ -372,8 +703,12 @@ const ReportsAnalytics = () => {
                 </h4>
               </div>
               <p className="text-sm text-green-700">
-                Pendapatan meningkat {reportData.revenueGrowth}% dibanding bulan
-                lalu. Pertahankan kualitas mengajar yang baik!
+                Pendapatan{" "}
+                {reportData.revenueGrowth >= 0 ? "meningkat" : "menurun"}{" "}
+                {Math.abs(reportData.revenueGrowth)}% dibanding bulan lalu.{" "}
+                {reportData.revenueGrowth >= 0
+                  ? "Pertahankan kualitas mengajar yang baik!"
+                  : "Perlu strategi untuk meningkatkan pendapatan."}
               </p>
             </div>
 
@@ -383,8 +718,13 @@ const ReportsAnalytics = () => {
                 <h4 className="font-medium text-blue-900">Retensi Siswa</h4>
               </div>
               <p className="text-sm text-blue-700">
-                Tingkat retensi siswa mencapai 85%. Siswa puas dengan metode
-                pengajaran Anda.
+                Jumlah siswa aktif: {reportData.totalStudents} dengan
+                pertumbuhan{" "}
+                {reportData.monthlyGrowth >= 0 ? "positif" : "negatif"}{" "}
+                {Math.abs(reportData.monthlyGrowth)}%.
+                {reportData.monthlyGrowth >= 0
+                  ? "Siswa puas dengan metode pengajaran Anda."
+                  : "Perlu evaluasi untuk meningkatkan retensi siswa."}
               </p>
             </div>
 
