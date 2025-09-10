@@ -73,6 +73,66 @@ export type Database = {
           },
         ]
       }
+      lesson_notes: {
+        Row: {
+          content: string
+          created_at: string | null
+          duration_minutes: number | null
+          homework: string | null
+          id: string
+          lesson_date: string
+          next_topic: string | null
+          student_id: string
+          student_progress: string | null
+          tenant_id: string
+          topic: string
+          updated_at: string | null
+        }
+        Insert: {
+          content: string
+          created_at?: string | null
+          duration_minutes?: number | null
+          homework?: string | null
+          id?: string
+          lesson_date: string
+          next_topic?: string | null
+          student_id: string
+          student_progress?: string | null
+          tenant_id: string
+          topic: string
+          updated_at?: string | null
+        }
+        Update: {
+          content?: string
+          created_at?: string | null
+          duration_minutes?: number | null
+          homework?: string | null
+          id?: string
+          lesson_date?: string
+          next_topic?: string | null
+          student_id?: string
+          student_progress?: string | null
+          tenant_id?: string
+          topic?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lesson_notes_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lesson_notes_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payments: {
         Row: {
           amount: number
