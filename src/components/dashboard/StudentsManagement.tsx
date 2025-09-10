@@ -65,6 +65,7 @@ const StudentsManagement = ({
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
   const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
@@ -98,6 +99,106 @@ const StudentsManagement = ({
   const handleViewDetail = (student: Student) => {
     setSelectedStudent(student);
     setIsDetailDialogOpen(true);
+  };
+
+  const handleEditStudent = (student: Student) => {
+    setSelectedStudent(student);
+    setFormData({
+      name: student.name,
+      email: student.email || "",
+      phone: student.phone || "",
+      grade: student.grade || "",
+      subject: student.subject || "",
+      parentName: student.parent_name || "",
+      parentPhone: student.parent_phone || "",
+      address: student.address || "",
+      notes: student.notes || "",
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleUpdateStudent = async () => {
+    if (!user || !selectedStudent || !formData.name) {
+      alert("Mohon masukkan nama siswa");
+      return;
+    }
+
+    try {
+      setFormLoading(true);
+
+      // Update student
+      const { error } = await supabase
+        .from("students")
+        .update({
+          name: formData.name,
+          email: formData.email || null,
+          phone: formData.phone || null,
+          grade: formData.grade || null,
+          subject: formData.subject || null,
+          parent_name: formData.parentName || null,
+          parent_phone: formData.parentPhone || null,
+          address: formData.address || null,
+          notes: formData.notes || null,
+        })
+        .eq("id", selectedStudent.id);
+
+      if (error) {
+        console.error("Error updating student:", error);
+        alert("Gagal mengupdate siswa");
+        return;
+      }
+
+      // Reset form and close dialog
+      setFormData({
+        name: "",
+        email: "",
+        phone: "",
+        grade: "",
+        subject: "",
+        parentName: "",
+        parentPhone: "",
+        address: "",
+        notes: "",
+      });
+      setIsEditDialogOpen(false);
+      setSelectedStudent(null);
+      alert("Data siswa berhasil diupdate!");
+
+      // Refresh students list
+      fetchStudents();
+    } catch (error) {
+      console.error("Error:", error);
+      alert("Terjadi kesalahan");
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleDeleteStudent = async (student: Student) => {
+    if (!confirm(`Apakah Anda yakin ingin menghapus siswa ${student.name}?`)) {
+      return;
+    }
+
+    try {
+      // Soft delete by setting is_active to false
+      const { error } = await supabase
+        .from("students")
+        .update({ is_active: false })
+        .eq("id", student.id);
+
+      if (error) {
+        console.error("Error deleting student:", error);
+        alert("Gagal menghapus siswa");
+        return;
+      }
+
+      alert("Siswa berhasil dihapus!");
+      // Refresh students list
+      fetchStudents();
+    } catch (error) {
+      console.error("Error:", error);
+      alert("Terjadi kesalahan");
+    }
   };
 
   const handleScheduleLesson = (student: Student) => {
@@ -742,6 +843,7 @@ const StudentsManagement = ({
                           variant="ghost"
                           size="sm"
                           className="h-8 w-8 p-0"
+                          onClick={() => handleEditStudent(student)}
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
@@ -749,6 +851,7 @@ const StudentsManagement = ({
                           variant="ghost"
                           size="sm"
                           className="h-8 w-8 p-0 text-red-500 hover:text-red-700"
+                          onClick={() => handleDeleteStudent(student)}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -822,6 +925,250 @@ const StudentsManagement = ({
           )}
         </CardContent>
       </Card>
+
+      {/* Edit Student Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Edit Data Siswa</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="editName" className="text-right">
+                Nama Siswa *
+              </Label>
+              <Input
+                id="editName"
+                value={formData.name}
+                onChange={(e) =>
+                  setFormData({ ...formData, name: e.target.value })
+                }
+                className="col-span-3"
+                placeholder="Masukkan nama siswa"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="editEmail" className="text-right">
+                Email
+              </Label>
+              <Input
+                id="editEmail"
+                type="email"
+                value={formData.email}
+                onChange={(e) =>
+                  setFormData({ ...formData, email: e.target.value })
+                }
+                className="col-span-3"
+                placeholder="Email siswa (opsional)"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="editPhone" className="text-right">
+                No. Telepon
+              </Label>
+              <Input
+                id="editPhone"
+                value={formData.phone}
+                onChange={(e) =>
+                  setFormData({ ...formData, phone: e.target.value })
+                }
+                className="col-span-3"
+                placeholder="No. telepon siswa"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="editGrade" className="text-right">
+                Kelas/Tingkat
+              </Label>
+              <Select
+                value={formData.grade}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, grade: value })
+                }
+              >
+                <SelectTrigger className="col-span-3">
+                  <SelectValue placeholder="Pilih kelas/tingkat" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="SD Kelas 1">SD Kelas 1</SelectItem>
+                  <SelectItem value="SD Kelas 2">SD Kelas 2</SelectItem>
+                  <SelectItem value="SD Kelas 3">SD Kelas 3</SelectItem>
+                  <SelectItem value="SD Kelas 4">SD Kelas 4</SelectItem>
+                  <SelectItem value="SD Kelas 5">SD Kelas 5</SelectItem>
+                  <SelectItem value="SD Kelas 6">SD Kelas 6</SelectItem>
+                  <SelectItem value="SMP Kelas 7">SMP Kelas 7</SelectItem>
+                  <SelectItem value="SMP Kelas 8">SMP Kelas 8</SelectItem>
+                  <SelectItem value="SMP Kelas 9">SMP Kelas 9</SelectItem>
+                  <SelectItem value="SMA Kelas 10">SMA Kelas 10</SelectItem>
+                  <SelectItem value="SMA Kelas 11">SMA Kelas 11</SelectItem>
+                  <SelectItem value="SMA Kelas 12">SMA Kelas 12</SelectItem>
+                  <SelectItem value="Pra Sekolah">Pra Sekolah</SelectItem>
+                  <SelectItem value="Pasca Sekolah">Pasca Sekolah</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="editSubject" className="text-right">
+                Mata Pelajaran
+              </Label>
+              <Select
+                value={formData.subject}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, subject: value })
+                }
+              >
+                <SelectTrigger className="col-span-3">
+                  <SelectValue placeholder="Pilih mata pelajaran" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Matematika">Matematika</SelectItem>
+                  <SelectItem value="Fisika">Fisika</SelectItem>
+                  <SelectItem value="Kimia">Kimia</SelectItem>
+                  <SelectItem value="Biologi">Biologi</SelectItem>
+                  <SelectItem value="Bahasa Inggris">
+                    Bahasa Inggris
+                  </SelectItem>
+                  <SelectItem value="Bahasa Indonesia">
+                    Bahasa Indonesia
+                  </SelectItem>
+                  <SelectItem value="Calistung">Calistung</SelectItem>
+                  <SelectItem value="Bimbel Intensif UTBK & Sekolah Kedinasan">
+                    Bimbel Intensif UTBK & Sekolah Kedinasan
+                  </SelectItem>
+                  <SelectItem value="Robotics">Robotics</SelectItem>
+                  <SelectItem value="Pemrograman/Koding">
+                    Pemrograman/Koding
+                  </SelectItem>
+                  <SelectItem value="Ekonomi & Akuntansi">
+                    Ekonomi & Akuntansi
+                  </SelectItem>
+                  <SelectItem value="Gambar & Lukis">
+                    Gambar & Lukis
+                  </SelectItem>
+                  <SelectItem value="Musik Piano">Musik Piano</SelectItem>
+                  <SelectItem value="Musik Gitar">Musik Gitar</SelectItem>
+                  <SelectItem value="Musik Biola">Musik Biola</SelectItem>
+                  <SelectItem value="Musik Vokal">Musik Vokal</SelectItem>
+                  <SelectItem value="Musik Lainnya">Musik Lainnya</SelectItem>
+                  <SelectItem value="Komputer & Desain Grafis">
+                    Komputer & Desain Grafis
+                  </SelectItem>
+                  <SelectItem value="Tari">Tari</SelectItem>
+                  <SelectItem value="Olahraga Berenang">
+                    Olahraga Berenang
+                  </SelectItem>
+                  <SelectItem value="Olahraga Basket">
+                    Olahraga Basket
+                  </SelectItem>
+                  <SelectItem value="Olahraga Futsal">
+                    Olahraga Futsal
+                  </SelectItem>
+                  <SelectItem value="Olahraga Bulutangkis">
+                    Olahraga Bulutangkis
+                  </SelectItem>
+                  <SelectItem value="Olahraga Lainnya">
+                    Olahraga Lainnya
+                  </SelectItem>
+                  <SelectItem value="Anak Berkebutuhan Khusus">
+                    Anak Berkebutuhan Khusus
+                  </SelectItem>
+                  <SelectItem value="Mengaji">Mengaji</SelectItem>
+                  <SelectItem value="Public Speaking & Dakwah">
+                    Public Speaking & Dakwah
+                  </SelectItem>
+                  <SelectItem value="Les Lainnya">Les Lainnya</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="editParentName" className="text-right">
+                Nama Orang Tua
+              </Label>
+              <Input
+                id="editParentName"
+                value={formData.parentName}
+                onChange={(e) =>
+                  setFormData({ ...formData, parentName: e.target.value })
+                }
+                className="col-span-3"
+                placeholder="Nama orang tua/wali"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="editParentPhone" className="text-right">
+                No. Telepon Ortu
+              </Label>
+              <Input
+                id="editParentPhone"
+                value={formData.parentPhone}
+                onChange={(e) =>
+                  setFormData({ ...formData, parentPhone: e.target.value })
+                }
+                className="col-span-3"
+                placeholder="No. telepon orang tua"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="editAddress" className="text-right">
+                Alamat
+              </Label>
+              <Textarea
+                id="editAddress"
+                value={formData.address}
+                onChange={(e) =>
+                  setFormData({ ...formData, address: e.target.value })
+                }
+                className="col-span-3"
+                placeholder="Alamat lengkap siswa"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="editNotes" className="text-right">
+                Catatan
+              </Label>
+              <Textarea
+                id="editNotes"
+                value={formData.notes}
+                onChange={(e) =>
+                  setFormData({ ...formData, notes: e.target.value })
+                }
+                className="col-span-3"
+                placeholder="Catatan tambahan (opsional)"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsEditDialogOpen(false);
+                setSelectedStudent(null);
+                setFormData({
+                  name: "",
+                  email: "",
+                  phone: "",
+                  grade: "",
+                  subject: "",
+                  parentName: "",
+                  parentPhone: "",
+                  address: "",
+                  notes: "",
+                });
+              }}
+              disabled={formLoading}
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={handleUpdateStudent}
+              disabled={formLoading}
+              className="bg-blue-500 hover:bg-blue-600"
+            >
+              {formLoading ? "Menyimpan..." : "Update"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Student Detail Dialog */}
       <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
