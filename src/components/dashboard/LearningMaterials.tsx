@@ -12,6 +12,10 @@ import {
   Search,
   Plus,
   Download,
+  Link,
+  ExternalLink,
+  Share2,
+  Copy,
 } from "lucide-react";
 import {
   Dialog,
@@ -35,12 +39,14 @@ import { useAuth } from "../../../supabase/auth";
 interface Material {
   id: string;
   title: string;
-  type: "document" | "video" | "image" | "presentation";
+  type: "document" | "video" | "image" | "presentation" | "link";
   subject: string;
   uploadDate: string;
   size: string;
   downloads: number;
   thumbnail?: string;
+  external_url?: string;
+  is_external?: boolean;
 }
 
 const defaultMaterials: Material[] = [
@@ -84,6 +90,28 @@ const defaultMaterials: Material[] = [
     thumbnail:
       "https://images.unsplash.com/photo-1559757148-5c350d0d3c56?w=400&q=80",
   },
+  {
+    id: "5",
+    title: "Video Tutorial Integral - Khan Academy",
+    type: "link",
+    subject: "Matematika",
+    uploadDate: "2024-03-14",
+    size: "Link Eksternal",
+    downloads: 67,
+    external_url: "https://www.khanacademy.org/math/calculus-1/cs1-integrals",
+    is_external: true,
+  },
+  {
+    id: "6",
+    title: "Materi Fisika Kuantum - Google Drive",
+    type: "link",
+    subject: "Fisika",
+    uploadDate: "2024-03-13",
+    size: "Link Eksternal",
+    downloads: 23,
+    external_url: "https://drive.google.com/drive/folders/example",
+    is_external: true,
+  },
 ];
 
 const LearningMaterials = () => {
@@ -91,6 +119,7 @@ const LearningMaterials = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSubject, setSelectedSubject] = useState("all");
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
+  const [isLinkDialogOpen, setIsLinkDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const { user } = useAuth();
 
@@ -99,6 +128,16 @@ const LearningMaterials = () => {
     subject: "",
     gradeLevel: "",
     type: "document",
+    description: "",
+    tags: "",
+    isPublic: false,
+  });
+
+  const [linkFormData, setLinkFormData] = useState({
+    title: "",
+    subject: "",
+    gradeLevel: "",
+    url: "",
     description: "",
     tags: "",
     isPublic: false,
@@ -138,6 +177,7 @@ const LearningMaterials = () => {
           : [],
         is_public: formData.isPublic,
         download_count: 0,
+        is_external: false,
       });
 
       if (error) {
@@ -166,6 +206,110 @@ const LearningMaterials = () => {
     }
   };
 
+  const handleAddExternalLink = async () => {
+    if (!user || !linkFormData.title || !linkFormData.subject || !linkFormData.url) {
+      alert("Mohon lengkapi semua field yang wajib diisi");
+      return;
+    }
+
+    // Validate URL format
+    try {
+      new URL(linkFormData.url);
+    } catch {
+      alert("Format URL tidak valid. Pastikan URL dimulai dengan http:// atau https://");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      // Get user's tenant
+      const { data: tenantUser } = await supabase
+        .from("tenant_users")
+        .select("tenant_id")
+        .eq("user_id", user.id)
+        .single();
+
+      if (!tenantUser) {
+        alert("Tenant tidak ditemukan");
+        return;
+      }
+
+      // Create external link material record
+      const { error } = await supabase.from("learning_materials").insert({
+        tenant_id: tenantUser.tenant_id,
+        title: linkFormData.title,
+        subject: linkFormData.subject,
+        grade_level: linkFormData.gradeLevel,
+        file_type: "link",
+        description: linkFormData.description,
+        tags: linkFormData.tags
+          ? linkFormData.tags.split(",").map((tag) => tag.trim())
+          : [],
+        is_public: linkFormData.isPublic,
+        download_count: 0,
+        external_url: linkFormData.url,
+        is_external: true,
+      });
+
+      if (error) {
+        console.error("Error creating external link:", error);
+        alert("Gagal menambahkan link eksternal");
+        return;
+      }
+
+      // Reset form and close dialog
+      setLinkFormData({
+        title: "",
+        subject: "",
+        gradeLevel: "",
+        url: "",
+        description: "",
+        tags: "",
+        isPublic: false,
+      });
+      setIsLinkDialogOpen(false);
+      alert("Link eksternal berhasil ditambahkan!");
+    } catch (error) {
+      console.error("Error:", error);
+      alert("Terjadi kesalahan");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOpenExternalLink = (url: string) => {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleShareMaterial = async (material: Material) => {
+    const shareText = `${material.title}\n\nMata Pelajaran: ${material.subject}\n${material.is_external ? `Link: ${material.external_url}` : `Materi pembelajaran dari ${user?.email || 'guru'}`}`;
+    
+    // Try to use Web Share API if available
+    if (navigator.share && material.is_external) {
+      try {
+        await navigator.share({
+          title: material.title,
+          text: `Materi ${material.subject}: ${material.title}`,
+          url: material.external_url,
+        });
+        return;
+      } catch (error) {
+        // Fall back to clipboard if share fails
+        console.log('Share failed, falling back to clipboard');
+      }
+    }
+
+    // Fallback: Copy to clipboard
+    try {
+      await navigator.clipboard.writeText(shareText);
+      alert('Link materi berhasil disalin ke clipboard!');
+    } catch (error) {
+      // Final fallback: Show share text in alert
+      alert(`Bagikan materi ini:\n\n${shareText}`);
+    }
+  };
+
   const getTypeIcon = (type: string) => {
     switch (type) {
       case "document":
@@ -176,6 +320,8 @@ const LearningMaterials = () => {
         return <Image className="h-5 w-5 text-green-500" />;
       case "presentation":
         return <BookOpen className="h-5 w-5 text-purple-500" />;
+      case "link":
+        return <Link className="h-5 w-5 text-orange-500" />;
       default:
         return <FileText className="h-5 w-5 text-gray-500" />;
     }
@@ -191,6 +337,8 @@ const LearningMaterials = () => {
         return "bg-green-100 text-green-800";
       case "presentation":
         return "bg-purple-100 text-purple-800";
+      case "link":
+        return "bg-orange-100 text-orange-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
@@ -206,12 +354,21 @@ const LearningMaterials = () => {
         return "Gambar";
       case "presentation":
         return "Presentasi";
+      case "link":
+        return "Link Eksternal";
       default:
         return "File";
     }
   };
 
   const subjects = [...new Set(materials.map((m) => m.subject))];
+
+  const filteredMaterials = materials.filter((material) => {
+    const matchesSearch = material.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         material.subject.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSubject = selectedSubject === "all" || material.subject === selectedSubject;
+    return matchesSearch && matchesSubject;
+  });
 
   return (
     <div className="space-y-6 bg-white">
@@ -222,197 +379,382 @@ const LearningMaterials = () => {
             Materi Pembelajaran
           </h2>
           <p className="text-gray-500 mt-1">
-            Kelola dokumen dan media pembelajaran
+            Kelola dokumen, media pembelajaran, dan link eksternal
           </p>
         </div>
-        <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="bg-blue-500 hover:bg-blue-600 text-white rounded-full px-4 h-10">
-              <Upload className="mr-2 h-4 w-4" />
-              Upload Materi
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle>Upload Materi Pembelajaran</DialogTitle>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="title" className="text-right">
-                  Judul Materi *
-                </Label>
-                <Input
-                  id="title"
-                  value={formData.title}
-                  onChange={(e) =>
-                    setFormData({ ...formData, title: e.target.value })
-                  }
-                  className="col-span-3"
-                  placeholder="Masukkan judul materi"
-                />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="subject" className="text-right">
-                  Mata Pelajaran *
-                </Label>
-                <Select
-                  value={formData.subject}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, subject: value })
-                  }
-                >
-                  <SelectTrigger className="col-span-3">
-                    <SelectValue placeholder="Pilih mata pelajaran" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Matematika">Matematika</SelectItem>
-                    <SelectItem value="Fisika">Fisika</SelectItem>
-                    <SelectItem value="Kimia">Kimia</SelectItem>
-                    <SelectItem value="Biologi">Biologi</SelectItem>
-                    <SelectItem value="Bahasa Inggris">
-                      Bahasa Inggris
-                    </SelectItem>
-                    <SelectItem value="Bahasa Indonesia">
-                      Bahasa Indonesia
-                    </SelectItem>
-                    <SelectItem value="Calistung">Calistung</SelectItem>
-                    <SelectItem value="Bimbel Intensif UTBK & Sekolah Kedinasan">
-                      Bimbel Intensif UTBK & Sekolah Kedinasan
-                    </SelectItem>
-                    <SelectItem value="Robotics">Robotics</SelectItem>
-                    <SelectItem value="Pemrograman/Koding">
-                      Pemrograman/Koding
-                    </SelectItem>
-                    <SelectItem value="Ekonomi & Akuntansi">
-                      Ekonomi & Akuntansi
-                    </SelectItem>
-                    <SelectItem value="Gambar & Lukis">
-                      Gambar & Lukis
-                    </SelectItem>
-                    <SelectItem value="Musik Piano">Musik Piano</SelectItem>
-                    <SelectItem value="Musik Gitar">Musik Gitar</SelectItem>
-                    <SelectItem value="Musik Biola">Musik Biola</SelectItem>
-                    <SelectItem value="Musik Vokal">Musik Vokal</SelectItem>
-                    <SelectItem value="Musik Lainnya">Musik Lainnya</SelectItem>
-                    <SelectItem value="Komputer & Desain Grafis">
-                      Komputer & Desain Grafis
-                    </SelectItem>
-                    <SelectItem value="Tari">Tari</SelectItem>
-                    <SelectItem value="Olahraga Berenang">
-                      Olahraga Berenang
-                    </SelectItem>
-                    <SelectItem value="Olahraga Basket">
-                      Olahraga Basket
-                    </SelectItem>
-                    <SelectItem value="Olahraga Futsal">
-                      Olahraga Futsal
-                    </SelectItem>
-                    <SelectItem value="Olahraga Bulutangkis">
-                      Olahraga Bulutangkis
-                    </SelectItem>
-                    <SelectItem value="Olahraga Lainnya">
-                      Olahraga Lainnya
-                    </SelectItem>
-                    <SelectItem value="Anak Berkebutuhan Khusus">
-                      Anak Berkebutuhan Khusus
-                    </SelectItem>
-                    <SelectItem value="Mengaji">Mengaji</SelectItem>
-                    <SelectItem value="Public Speaking & Dakwah">
-                      Public Speaking & Dakwah
-                    </SelectItem>
-                    <SelectItem value="Les Lainnya">Les Lainnya</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="gradeLevel" className="text-right">
-                  Tingkat
-                </Label>
-                <Select
-                  value={formData.gradeLevel}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, gradeLevel: value })
-                  }
-                >
-                  <SelectTrigger className="col-span-3">
-                    <SelectValue placeholder="Pilih tingkat" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="SD">SD</SelectItem>
-                    <SelectItem value="SMP">SMP</SelectItem>
-                    <SelectItem value="SMA">SMA</SelectItem>
-                    <SelectItem value="Universitas">Universitas</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="type" className="text-right">
-                  Tipe File
-                </Label>
-                <Select
-                  value={formData.type}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, type: value })
-                  }
-                >
-                  <SelectTrigger className="col-span-3">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="document">Dokumen</SelectItem>
-                    <SelectItem value="video">Video</SelectItem>
-                    <SelectItem value="image">Gambar</SelectItem>
-                    <SelectItem value="presentation">Presentasi</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="description" className="text-right">
-                  Deskripsi
-                </Label>
-                <Textarea
-                  id="description"
-                  value={formData.description}
-                  onChange={(e) =>
-                    setFormData({ ...formData, description: e.target.value })
-                  }
-                  className="col-span-3"
-                  placeholder="Deskripsi materi (opsional)"
-                />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="tags" className="text-right">
-                  Tags
-                </Label>
-                <Input
-                  id="tags"
-                  value={formData.tags}
-                  onChange={(e) =>
-                    setFormData({ ...formData, tags: e.target.value })
-                  }
-                  className="col-span-3"
-                  placeholder="Tag1, Tag2, Tag3 (pisahkan dengan koma)"
-                />
-              </div>
-            </div>
-            <div className="flex justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={() => setIsUploadDialogOpen(false)}
-                disabled={loading}
-              >
-                Batal
+        <div className="flex gap-3">
+          <Dialog open={isLinkDialogOpen} onOpenChange={setIsLinkDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-orange-500 hover:bg-orange-600 text-white rounded-full px-4 h-10">
+                <Link className="mr-2 h-4 w-4" />
+                Tambah Link
               </Button>
-              <Button
-                onClick={handleUploadMaterial}
-                disabled={loading}
-                className="bg-blue-500 hover:bg-blue-600"
-              >
-                {loading ? "Mengunggah..." : "Upload"}
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle>Tambah Link Eksternal</DialogTitle>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="linkTitle" className="text-right">
+                    Judul Materi *
+                  </Label>
+                  <Input
+                    id="linkTitle"
+                    value={linkFormData.title}
+                    onChange={(e) =>
+                      setLinkFormData({ ...linkFormData, title: e.target.value })
+                    }
+                    className="col-span-3"
+                    placeholder="Masukkan judul materi"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="linkUrl" className="text-right">
+                    URL Link *
+                  </Label>
+                  <Input
+                    id="linkUrl"
+                    type="url"
+                    value={linkFormData.url}
+                    onChange={(e) =>
+                      setLinkFormData({ ...linkFormData, url: e.target.value })
+                    }
+                    className="col-span-3"
+                    placeholder="https://example.com/materi"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="linkSubject" className="text-right">
+                    Mata Pelajaran *
+                  </Label>
+                  <Select
+                    value={linkFormData.subject}
+                    onValueChange={(value) =>
+                      setLinkFormData({ ...linkFormData, subject: value })
+                    }
+                  >
+                    <SelectTrigger className="col-span-3">
+                      <SelectValue placeholder="Pilih mata pelajaran" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Matematika">Matematika</SelectItem>
+                      <SelectItem value="Fisika">Fisika</SelectItem>
+                      <SelectItem value="Kimia">Kimia</SelectItem>
+                      <SelectItem value="Biologi">Biologi</SelectItem>
+                      <SelectItem value="Bahasa Inggris">
+                        Bahasa Inggris
+                      </SelectItem>
+                      <SelectItem value="Bahasa Indonesia">
+                        Bahasa Indonesia
+                      </SelectItem>
+                      <SelectItem value="Calistung">Calistung</SelectItem>
+                      <SelectItem value="Bimbel Intensif UTBK & Sekolah Kedinasan">
+                        Bimbel Intensif UTBK & Sekolah Kedinasan
+                      </SelectItem>
+                      <SelectItem value="Robotics">Robotics</SelectItem>
+                      <SelectItem value="Pemrograman/Koding">
+                        Pemrograman/Koding
+                      </SelectItem>
+                      <SelectItem value="Ekonomi & Akuntansi">
+                        Ekonomi & Akuntansi
+                      </SelectItem>
+                      <SelectItem value="Gambar & Lukis">
+                        Gambar & Lukis
+                      </SelectItem>
+                      <SelectItem value="Musik Piano">Musik Piano</SelectItem>
+                      <SelectItem value="Musik Gitar">Musik Gitar</SelectItem>
+                      <SelectItem value="Musik Biola">Musik Biola</SelectItem>
+                      <SelectItem value="Musik Vokal">Musik Vokal</SelectItem>
+                      <SelectItem value="Musik Lainnya">Musik Lainnya</SelectItem>
+                      <SelectItem value="Komputer & Desain Grafis">
+                        Komputer & Desain Grafis
+                      </SelectItem>
+                      <SelectItem value="Tari">Tari</SelectItem>
+                      <SelectItem value="Olahraga Berenang">
+                        Olahraga Berenang
+                      </SelectItem>
+                      <SelectItem value="Olahraga Basket">
+                        Olahraga Basket
+                      </SelectItem>
+                      <SelectItem value="Olahraga Futsal">
+                        Olahraga Futsal
+                      </SelectItem>
+                      <SelectItem value="Olahraga Bulutangkis">
+                        Olahraga Bulutangkis
+                      </SelectItem>
+                      <SelectItem value="Olahraga Lainnya">
+                        Olahraga Lainnya
+                      </SelectItem>
+                      <SelectItem value="Anak Berkebutuhan Khusus">
+                        Anak Berkebutuhan Khusus
+                      </SelectItem>
+                      <SelectItem value="Mengaji">Mengaji</SelectItem>
+                      <SelectItem value="Public Speaking & Dakwah">
+                        Public Speaking & Dakwah
+                      </SelectItem>
+                      <SelectItem value="Les Lainnya">Les Lainnya</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="linkGradeLevel" className="text-right">
+                    Tingkat
+                  </Label>
+                  <Select
+                    value={linkFormData.gradeLevel}
+                    onValueChange={(value) =>
+                      setLinkFormData({ ...linkFormData, gradeLevel: value })
+                    }
+                  >
+                    <SelectTrigger className="col-span-3">
+                      <SelectValue placeholder="Pilih tingkat" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="SD">SD</SelectItem>
+                      <SelectItem value="SMP">SMP</SelectItem>
+                      <SelectItem value="SMA">SMA</SelectItem>
+                      <SelectItem value="Universitas">Universitas</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="linkDescription" className="text-right">
+                    Deskripsi
+                  </Label>
+                  <Textarea
+                    id="linkDescription"
+                    value={linkFormData.description}
+                    onChange={(e) =>
+                      setLinkFormData({ ...linkFormData, description: e.target.value })
+                    }
+                    className="col-span-3"
+                    placeholder="Deskripsi materi (opsional)"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="linkTags" className="text-right">
+                    Tags
+                  </Label>
+                  <Input
+                    id="linkTags"
+                    value={linkFormData.tags}
+                    onChange={(e) =>
+                      setLinkFormData({ ...linkFormData, tags: e.target.value })
+                    }
+                    className="col-span-3"
+                    placeholder="Tag1, Tag2, Tag3 (pisahkan dengan koma)"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setIsLinkDialogOpen(false)}
+                  disabled={loading}
+                >
+                  Batal
+                </Button>
+                <Button
+                  onClick={handleAddExternalLink}
+                  disabled={loading}
+                  className="bg-orange-500 hover:bg-orange-600"
+                >
+                  {loading ? "Menambahkan..." : "Tambah Link"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+          
+          <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-blue-500 hover:bg-blue-600 text-white rounded-full px-4 h-10">
+                <Upload className="mr-2 h-4 w-4" />
+                Upload File
               </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle>Upload File Materi</DialogTitle>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="title" className="text-right">
+                    Judul Materi *
+                  </Label>
+                  <Input
+                    id="title"
+                    value={formData.title}
+                    onChange={(e) =>
+                      setFormData({ ...formData, title: e.target.value })
+                    }
+                    className="col-span-3"
+                    placeholder="Masukkan judul materi"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="subject" className="text-right">
+                    Mata Pelajaran *
+                  </Label>
+                  <Select
+                    value={formData.subject}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, subject: value })
+                    }
+                  >
+                    <SelectTrigger className="col-span-3">
+                      <SelectValue placeholder="Pilih mata pelajaran" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Matematika">Matematika</SelectItem>
+                      <SelectItem value="Fisika">Fisika</SelectItem>
+                      <SelectItem value="Kimia">Kimia</SelectItem>
+                      <SelectItem value="Biologi">Biologi</SelectItem>
+                      <SelectItem value="Bahasa Inggris">
+                        Bahasa Inggris
+                      </SelectItem>
+                      <SelectItem value="Bahasa Indonesia">
+                        Bahasa Indonesia
+                      </SelectItem>
+                      <SelectItem value="Calistung">Calistung</SelectItem>
+                      <SelectItem value="Bimbel Intensif UTBK & Sekolah Kedinasan">
+                        Bimbel Intensif UTBK & Sekolah Kedinasan
+                      </SelectItem>
+                      <SelectItem value="Robotics">Robotics</SelectItem>
+                      <SelectItem value="Pemrograman/Koding">
+                        Pemrograman/Koding
+                      </SelectItem>
+                      <SelectItem value="Ekonomi & Akuntansi">
+                        Ekonomi & Akuntansi
+                      </SelectItem>
+                      <SelectItem value="Gambar & Lukis">
+                        Gambar & Lukis
+                      </SelectItem>
+                      <SelectItem value="Musik Piano">Musik Piano</SelectItem>
+                      <SelectItem value="Musik Gitar">Musik Gitar</SelectItem>
+                      <SelectItem value="Musik Biola">Musik Biola</SelectItem>
+                      <SelectItem value="Musik Vokal">Musik Vokal</SelectItem>
+                      <SelectItem value="Musik Lainnya">Musik Lainnya</SelectItem>
+                      <SelectItem value="Komputer & Desain Grafis">
+                        Komputer & Desain Grafis
+                      </SelectItem>
+                      <SelectItem value="Tari">Tari</SelectItem>
+                      <SelectItem value="Olahraga Berenang">
+                        Olahraga Berenang
+                      </SelectItem>
+                      <SelectItem value="Olahraga Basket">
+                        Olahraga Basket
+                      </SelectItem>
+                      <SelectItem value="Olahraga Futsal">
+                        Olahraga Futsal
+                      </SelectItem>
+                      <SelectItem value="Olahraga Bulutangkis">
+                        Olahraga Bulutangkis
+                      </SelectItem>
+                      <SelectItem value="Olahraga Lainnya">
+                        Olahraga Lainnya
+                      </SelectItem>
+                      <SelectItem value="Anak Berkebutuhan Khusus">
+                        Anak Berkebutuhan Khusus
+                      </SelectItem>
+                      <SelectItem value="Mengaji">Mengaji</SelectItem>
+                      <SelectItem value="Public Speaking & Dakwah">
+                        Public Speaking & Dakwah
+                      </SelectItem>
+                      <SelectItem value="Les Lainnya">Les Lainnya</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="gradeLevel" className="text-right">
+                    Tingkat
+                  </Label>
+                  <Select
+                    value={formData.gradeLevel}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, gradeLevel: value })
+                    }
+                  >
+                    <SelectTrigger className="col-span-3">
+                      <SelectValue placeholder="Pilih tingkat" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="SD">SD</SelectItem>
+                      <SelectItem value="SMP">SMP</SelectItem>
+                      <SelectItem value="SMA">SMA</SelectItem>
+                      <SelectItem value="Universitas">Universitas</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="type" className="text-right">
+                    Tipe File
+                  </Label>
+                  <Select
+                    value={formData.type}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, type: value })
+                    }
+                  >
+                    <SelectTrigger className="col-span-3">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="document">Dokumen</SelectItem>
+                      <SelectItem value="video">Video</SelectItem>
+                      <SelectItem value="image">Gambar</SelectItem>
+                      <SelectItem value="presentation">Presentasi</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="description" className="text-right">
+                    Deskripsi
+                  </Label>
+                  <Textarea
+                    id="description"
+                    value={formData.description}
+                    onChange={(e) =>
+                      setFormData({ ...formData, description: e.target.value })
+                    }
+                    className="col-span-3"
+                    placeholder="Deskripsi materi (opsional)"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="tags" className="text-right">
+                    Tags
+                  </Label>
+                  <Input
+                    id="tags"
+                    value={formData.tags}
+                    onChange={(e) =>
+                      setFormData({ ...formData, tags: e.target.value })
+                    }
+                    className="col-span-3"
+                    placeholder="Tag1, Tag2, Tag3 (pisahkan dengan koma)"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setIsUploadDialogOpen(false)}
+                  disabled={loading}
+                >
+                  Batal
+                </Button>
+                <Button
+                  onClick={handleUploadMaterial}
+                  disabled={loading}
+                  className="bg-blue-500 hover:bg-blue-600"
+                >
+                  {loading ? "Mengunggah..." : "Upload"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -512,7 +854,7 @@ const LearningMaterials = () => {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {materials.map((material) => (
+            {filteredMaterials.map((material) => (
               <Card
                 key={material.id}
                 className="bg-gray-50 border border-gray-200 rounded-xl hover:shadow-md transition-all"
@@ -534,6 +876,9 @@ const LearningMaterials = () => {
                         {getTypeText(material.type)}
                       </Badge>
                     </div>
+                    {material.is_external && (
+                      <ExternalLink className="h-4 w-4 text-orange-500" />
+                    )}
                   </div>
                   <h4 className="font-medium text-gray-900 mb-2 line-clamp-2">
                     {material.title}
@@ -542,23 +887,41 @@ const LearningMaterials = () => {
                     <p>Mata Pelajaran: {material.subject}</p>
                     <p>Ukuran: {material.size}</p>
                     <p>Upload: {material.uploadDate}</p>
-                    <p>Download: {material.downloads}x</p>
+                    <p>Akses: {material.downloads}x</p>
+                    {material.external_url && (
+                      <p className="text-orange-600 truncate">
+                        URL: {material.external_url}
+                      </p>
+                    )}
                   </div>
                   <div className="flex gap-2 mt-4">
+                    {material.is_external ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 rounded-full bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100"
+                        onClick={() => handleOpenExternalLink(material.external_url!)}
+                      >
+                        <ExternalLink className="mr-1 h-3 w-3" />
+                        Buka Link
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 rounded-full"
+                      >
+                        <Download className="mr-1 h-3 w-3" />
+                        Download
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
-                      className="flex-1 rounded-full"
+                      className="rounded-full hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700"
+                      onClick={() => handleShareMaterial(material)}
                     >
-                      <Download className="mr-1 h-3 w-3" />
-                      Download
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="rounded-full"
-                    >
-                      Share
+                      <Share2 className="h-3 w-3" />
                     </Button>
                   </div>
                 </CardContent>
