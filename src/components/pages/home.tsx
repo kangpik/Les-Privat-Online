@@ -377,11 +377,11 @@ export default function LandingPage() {
               </ul>
             </div>
             <div>
-              <h4 className="font-medium text-sm text-gray-900 mb-4">Legal</h4>
+              <h4 className="font-medium text-sm text-gray-900 mb-4">Admin</h4>
               <ul className="space-y-2">
                 <li>
-                  <Link to="/" className="hover:underline">
-                    Privasi
+                  <Link to="/admin-login" className="hover:underline text-blue-600">
+                    Super Admin Login
                   </Link>
                 </li>
                 <li>
@@ -402,8 +402,14 @@ export default function LandingPage() {
               </ul>
             </div>
           </div>
-          <div className="py-4">
+          <div className="py-4 flex justify-between items-center">
             <p>Copyright © 2025 LesPrivat Pro. Semua hak dilindungi.</p>
+            <Link 
+              to="/admin-login" 
+              className="text-blue-600 hover:underline font-medium"
+            >
+              Admin Access
+            </Link>
           </div>
         </div>
       </footer>

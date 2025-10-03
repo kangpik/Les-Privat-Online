@@ -19,11 +19,13 @@ export type Database = {
           created_at: string | null
           description: string | null
           download_count: number | null
+          external_url: string | null
           file_size: number | null
           file_type: string | null
           file_url: string | null
           grade_level: string | null
           id: string
+          is_external: boolean | null
           is_public: boolean | null
           subject: string | null
           tags: string[] | null
@@ -35,11 +37,13 @@ export type Database = {
           created_at?: string | null
           description?: string | null
           download_count?: number | null
+          external_url?: string | null
           file_size?: number | null
           file_type?: string | null
           file_url?: string | null
           grade_level?: string | null
           id?: string
+          is_external?: boolean | null
           is_public?: boolean | null
           subject?: string | null
           tags?: string[] | null
@@ -51,11 +55,13 @@ export type Database = {
           created_at?: string | null
           description?: string | null
           download_count?: number | null
+          external_url?: string | null
           file_size?: number | null
           file_type?: string | null
           file_url?: string | null
           grade_level?: string | null
           id?: string
+          is_external?: boolean | null
           is_public?: boolean | null
           subject?: string | null
           tags?: string[] | null
@@ -315,6 +321,27 @@ export type Database = {
           },
         ]
       }
+      super_admins: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          id: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       tenant_users: {
         Row: {
           created_at: string | null
@@ -427,9 +454,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_system_stats: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
       get_user_tenant_id: {
         Args: Record<PropertyKey, never>
         Returns: string
+      }
+      is_super_admin: {
+        Args: { user_uuid?: string }
+        Returns: boolean
       }
     }
     Enums: {
